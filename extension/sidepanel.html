@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ChatGPT Conversation Archive</title>
+    <link rel="stylesheet" href="./sidepanel.css" />
+  </head>
+  <body>
+    <main class="app">
+      <header class="header">
+        <h1>Conversation Archive</h1>
+        <p>Export ChatGPT chats to Markdown</p>
+      </header>
+
+      <section class="actions">
+        <button id="export-current-btn" class="btn primary">Export Current Conversation</button>
+        <button id="export-selected-btn" class="btn primary subtle">Export Selected (ZIP)</button>
+        <button id="refresh-history-btn" class="btn">Load History Links</button>
+      </section>
+
+      <section class="panel">
+        <div class="panel-title-row">
+          <h2>History</h2>
+          <span id="history-count">0</span>
+        </div>
+        <input
+          id="history-search-input"
+          class="search-input"
+          type="search"
+          placeholder="Search history title..."
+        />
+        <div class="selection-row">
+          <button id="select-visible-btn" class="btn tiny">Select Page</button>
+          <button id="clear-selection-btn" class="btn tiny">Clear Selection</button>
+          <span id="selected-count" class="selected-count">Selected: 0</span>
+        </div>
+        <div class="pagination-row">
+          <button id="prev-page-btn" class="btn tiny">Prev</button>
+          <span id="page-info" class="page-info">Page 1/1</span>
+          <button id="next-page-btn" class="btn tiny">Next</button>
+          <label class="page-size-label" for="history-page-size">
+            Page size
+            <select id="history-page-size" class="page-size-select">
+              <option value="10">10</option>
+              <option value="20" selected>20</option>
+              <option value="50">50</option>
+            </select>
+          </label>
+        </div>
+        <div id="history-list" class="history-list"></div>
+      </section>
+
+      <section class="status-wrap">
+        <h2>Status</h2>
+        <pre id="status" class="status">Idle</pre>
+      </section>
+    </main>
+
+    <script type="module" src="./sidepanel.js"></script>
+  </body>
+</html>

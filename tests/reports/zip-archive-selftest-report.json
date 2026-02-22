@@ -1,0 +1,6 @@
+{
+  "endedAt": "2026-02-22T15:47:44.241Z",
+  "result": "passed",
+  "zipPath": "/tmp/chatgpt-archive-selftest.zip",
+  "unzipTestOutput": "Archive:  /tmp/chatgpt-archive-selftest.zip\n    testing: sample/a.md              OK\n    testing: sample/b.md              OK\nNo errors detected in compressed data of /tmp/chatgpt-archive-selftest.zip."
+}

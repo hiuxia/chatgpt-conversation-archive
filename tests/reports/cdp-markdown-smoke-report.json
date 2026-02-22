@@ -1,0 +1,34 @@
+{
+  "startedAt": "2026-02-22T15:47:44.390Z",
+  "steps": [
+    "Navigate to chatgpt.com home",
+    "Found first conversation href: /c/6961d655-4520-8320-a3ee-6e097bb78da4",
+    "Navigate to conversation: https://chatgpt.com/c/6961d655-4520-8320-a3ee-6e097bb78da4"
+  ],
+  "checks": [
+    "Heading syntax preserved.",
+    "List syntax preserved.",
+    "Bold syntax preserved."
+  ],
+  "result": "passed",
+  "extraction": {
+    "turnCount": 64,
+    "domFeatures": {
+      "headings": 4,
+      "lists": 8,
+      "bold": 3,
+      "links": 0,
+      "code": 0,
+      "tables": 0
+    },
+    "markdownFeatures": {
+      "hasHeading": true,
+      "hasList": true,
+      "hasBold": true,
+      "hasLink": false,
+      "hasCode": false,
+      "hasTable": false
+    },
+    "sampleMarkdown": "Methodology 是“你打算怎么做、为什么这样做”，Experiment 是“你照着这个做了什么、得到了什么结果，以及这些结果怎么回答你的研究问题”。\n\n它们的关系可以用一句话概括：**Methodology 给实验提供可复现的操作蓝图，Experiment 用数据把这个蓝图的有效性、边界和因果归因讲清楚。**\n\n### 各自解决的问题不一样\n\nMethodology 主要回答：\n\n- \n  你的问题怎么被形式化成可执行的设定（任务定义、输入输出、威胁模型或假设）\n  \n- \n  你的方法/系统/流程是什么（算法、模板、训练或推理流程、数据处理）\n  \n- \n  为什么这样设计是合理的（设计动机、与已有方法对比的关键差异）\n  \n- \n  别人怎么复现（关键超参、实现细节、约束条件）\n  \n\nExperiment 主要回答：\n\n- \n  这个方法在什么基准上表现如何（主结果）\n  \n- \n  增益从哪来（ablation、对照组、组件贡献）\n  \n- \n  什么时候不行或会退化（robustness、分布外、失败案例）\n  \n- \n  结论是否可信（统计检验、重复实验、置信区间、显著性，或误差分析）\n  \n\n### 在论文结构里怎么“对齐”\n\n通常一条从 Methodology 到 Experiment 的“映射链”是：\n\n- \n  Methodology 的每个设计点，都在 Experiment 里对应一个可验证的问题\n  \n  - \n      例如：你提出了一个新组件 A，那么实验里至少要有 “无 A vs 有 A” 的对照（ablation），否则读者会怀疑 A 是不是装饰品。\n- \n  Methodology 给出评价标准，Experiment 必须遵守并说明怎么测\n  \n  - \n      例如：你说用 ASR 或 StrongREJECT 之类的 protocol，那实验就要明确阈值、判定规则、采样方式、随机种子或重复次数。\n- \n  Methodology 的假设要在 Experiment 里被压力测试\n  \n  - \n      例如：你假设对模板位置敏感，那就要做 placement sweep，而不是只报一个位置的结果。\n\n### 常见“写作失败模式”\n\n读者最烦的其实是 Methodology 和 Experiment 断裂：\n\n- \n  Methodology 说得很复杂，Experiment 只做了一个总对比，无法归因\n  \n- \n  Experiment 报了很多指标，但 Methodology 从未定义这些指标为什么合理\n  \n- \n  Methodology 缺关键细节，导致实验结果像“魔法”，不可复现\n  \n- \n  实验设计引入新变量，但没有在方法里承认并控制它（例如推理模式、解码策略、长度截断、上下文窗口差异）"
+  }
+}
