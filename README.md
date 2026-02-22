@@ -1,40 +1,38 @@
 # ChatGPT Conversation Archive
 
-Chrome extension project for exporting ChatGPT conversations to Markdown, including single-conversation export and batch export from history.
+把 `chatgpt.com` 对话导出为 Markdown，支持单条导出和批量 ZIP 导出。
 
-## Release
+## 安装（Chrome）
 
-Current target release: `v0.1.0`
+1. 打开 `chrome://extensions`
+2. 打开右上角 `开发者模式`
+3. 点击 `加载已解压的扩展程序`
+4. 选择本项目里的 `extension/` 目录
+5. 打开 `https://chatgpt.com` 并登录账号
+6. 打开插件侧边栏 `Conversation Archive`
 
-Key docs:
+## 怎么用
 
-1. `PRIVACY.md`
-2. `SECURITY.md`
-3. `CHANGELOG.md`
-4. `RELEASE_NOTES_v0.1.0.md`
+### 导出当前对话（单条）
 
-## Build Release Artifact
+1. 在 ChatGPT 打开一个具体对话页面（`/c/<id>`）
+2. 点击 `Export Current Conversation`
+3. 浏览器会下载一个 `.md` 文件
 
-```bash
-cd chatgpt-conversation-archive
-mkdir -p release
-cd extension
-zip -r ../release/chatgpt-conversation-archive-v0.1.0-extension.zip . -x "*.DS_Store"
-```
+### 批量导出（ZIP）
 
-## Agent Guide
+1. 点击 `Load History Links` 加载历史会话
+2. 通过搜索、分页浏览，勾选想导出的会话
+3. 点击 `Export Selected (ZIP)`
+4. 浏览器会下载一个 `.zip`，里面每个会话对应一个 `.md`
 
-- `AGENTS.md`
+## 小提示
 
-## Docs
+1. `Select Page` 只会选中当前页。
+2. 你勾选的会话会在当前浏览器会话内保留（关闭侧边栏再打开还在）。
+3. 如果历史列表不全，先在 ChatGPT 左侧历史栏向下滚动，再点一次 `Load History Links`。
 
-- `doc/00-onboarding.md`
-- `doc/01-development-setup.md`
-- `doc/02-developer-instructions.md`
-- `doc/03-chatgpt-page-analysis.md`
-- `doc/04-implementation-plan.md`
-- `doc/05-architecture.md`
-- `doc/06-debug-runbook.md`
-- `doc/07-test-plan.md`
-- `doc/08-decision-log.md`
-- `doc/09-progress-status.md`
+## 当前版本
+
+- `v0.1.0`
+
