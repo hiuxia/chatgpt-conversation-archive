@@ -1,0 +1,12 @@
+{
+  "name": "chatgpt-conversation-archive",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "test:cdp": "node tests/cdp-markdown-smoke.test.js",
+    "test:zip": "node tests/zip-archive-selftest.js"
+  },
+  "devDependencies": {
+    "puppeteer-core": "^24.5.0"
+  }
+}
