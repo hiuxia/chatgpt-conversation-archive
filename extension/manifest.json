@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "ChatGPT Conversation Archive",
+  "name": "ChatGPT Exporter",
   "version": "0.1.0",
-  "description": "Export ChatGPT conversations to Markdown and prepare batch exports.",
+  "description": "Export ChatGPT conversations to Markdown, including batch ZIP export.",
   "permissions": ["storage", "downloads", "tabs", "sidePanel", "scripting"],
   "host_permissions": ["https://chatgpt.com/*"],
   "background": {
@@ -17,7 +17,7 @@
     }
   ],
   "action": {
-    "default_title": "ChatGPT Conversation Archive"
+    "default_title": "ChatGPT Exporter"
   },
   "side_panel": {
     "default_path": "sidepanel.html"
