@@ -36,6 +36,36 @@
 
 - `v0.1.0`
 
+## 调试（可选，chrome-devtools-mcp）
+
+如果你要做自动化调试或跑 `npm run test:cdp`，按下面步骤：
+
+1. 启动专用 Chrome（9222 端口）：
+   ```bash
+   mkdir -p /tmp/chrome-mcp-chatgpt
+   open -na "Google Chrome" --args \
+     --remote-debugging-port=9222 \
+     --user-data-dir=/tmp/chrome-mcp-chatgpt
+   ```
+2. 在这个窗口登录 `https://chatgpt.com`
+3. 验证调试端口：
+   ```bash
+   curl -s http://127.0.0.1:9222/json/version
+   curl -s http://127.0.0.1:9222/json/list
+   ```
+4. 连接 MCP：
+   ```bash
+   codex mcp remove chrome-devtools
+   codex mcp add chrome-devtools -- \
+     npx -y chrome-devtools-mcp@latest \
+     --browser-url=http://127.0.0.1:9222
+   codex mcp list
+   ```
+5. 跑 CDP 测试：
+   ```bash
+   npm run test:cdp
+   ```
+
 ## 贡献上手
 
 欢迎提 Issue 或 PR，一般按下面流程即可：
