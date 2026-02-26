@@ -1,4 +1,4 @@
-# ChatGPT Conversation Archive
+# ChatGPT Exporter
 
 把 `chatgpt.com` 对话导出为 Markdown，支持单条导出和批量 ZIP 导出。
 
@@ -9,7 +9,7 @@
 3. 点击 `加载已解压的扩展程序`
 4. 选择本项目里的 `extension/` 目录
 5. 打开 `https://chatgpt.com` 并登录账号
-6. 打开插件侧边栏 `Conversation Archive`
+6. 打开插件侧边栏 `ChatGPT Exporter`
 
 ## 怎么用
 
@@ -36,3 +36,21 @@
 
 - `v0.1.0`
 
+## 贡献上手
+
+欢迎提 Issue 或 PR，一般按下面流程即可：
+
+1. Fork 本仓库并 clone 到本地
+2. 安装依赖：
+   - `npm install`
+3. 本地加载扩展：
+   - 打开 `chrome://extensions`
+   - 开启开发者模式
+   - 加载 `extension/` 目录
+4. 修改后做基本验证：
+   - `npm run test:zip`
+   - `npm run test:cdp`（需要你本地开了 9222 调试端口并已登录 ChatGPT）
+5. 提交分支并发起 PR，说明：
+   - 改了什么
+   - 为什么改
+   - 怎么验证的
