@@ -2,4 +2,8 @@ node_modules/
 release/
 .DS_Store
 *.log
-
+doc/
+PRIVACY.md
+CHANGELOG.md
+SECURITY.md
+RELEASE_NOTES_*.md
