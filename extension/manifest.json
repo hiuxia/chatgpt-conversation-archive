@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "ChatGPT Exporter",
+  "name": "ChatGPT Voyager",
   "version": "0.1.0",
-  "description": "Export ChatGPT conversations to Markdown, including batch ZIP export.",
+  "description": "Organize ChatGPT chats with sidebar folders and export conversations to Markdown.",
   "permissions": ["storage", "downloads", "tabs", "sidePanel", "scripting"],
   "host_permissions": ["https://chatgpt.com/*"],
   "background": {
@@ -23,7 +23,7 @@
     }
   ],
   "action": {
-    "default_title": "ChatGPT Exporter"
+    "default_title": "ChatGPT Voyager"
   },
   "side_panel": {
     "default_path": "sidepanel.html"
