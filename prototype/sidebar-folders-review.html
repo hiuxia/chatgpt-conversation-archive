@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ChatGPT Sidebar Folders Prototype</title>
+    <link rel="stylesheet" href="./sidebar-folders-review.css" />
+  </head>
+  <body>
+    <main class="review-shell">
+      <aside class="sidebar-demo" aria-label="ChatGPT sidebar folders prototype">
+        <div class="sidebar-inner">
+          <div class="topbar">
+            <div class="topbar-mark">◌</div>
+            <div class="topbar-action">◧</div>
+          </div>
+
+          <div class="quick-actions" aria-label="native actions">
+            <div class="native-row">
+              <div class="row-icon">✎</div>
+              <div class="row-label">New chat</div>
+            </div>
+            <div class="native-row">
+              <div class="row-icon">⌕</div>
+              <div class="row-label">Search chats</div>
+            </div>
+            <div class="native-row">
+              <div class="row-icon">◔</div>
+              <div class="row-label">Library</div>
+            </div>
+          </div>
+
+          <div class="separator"></div>
+
+          <section aria-labelledby="folders-heading">
+            <div class="section-label" id="folders-heading">Folders</div>
+            <div class="folder-create">
+              <input type="text" value="Create folder..." aria-label="Folder name" />
+              <button type="button">Add</button>
+            </div>
+
+            <div class="folder-stack">
+              <article>
+                <div class="folder-row is-open">
+                  <div class="row-chevron">▾</div>
+                  <div class="row-icon">▣</div>
+                  <div class="row-label">Work / Research</div>
+                  <div class="row-count">6</div>
+                  <div class="row-menu">⋯</div>
+                </div>
+
+                <div class="folder-children">
+                  <article class="chat-row">
+                    <div class="row-icon">◌</div>
+                    <div class="row-label">Prompting patterns for internal tooling</div>
+                    <div class="folder-tag">Work / Research</div>
+                  </article>
+
+                  <article class="chat-row">
+                    <div class="row-icon">◌</div>
+                    <div class="row-label">Sidebar DOM notes from Chrome MCP</div>
+                    <div class="folder-tag">Work / Research</div>
+                  </article>
+                </div>
+              </article>
+
+              <article>
+                <div class="folder-row is-drop-target">
+                  <div class="row-chevron">▸</div>
+                  <div class="row-icon">▣</div>
+                  <div class="row-label">Language Study</div>
+                  <div class="row-count">12</div>
+                  <div class="row-menu">⋯</div>
+                </div>
+                <div class="folder-drop-hint">Drop “Rust ownership recap” here</div>
+              </article>
+
+              <article>
+                <div class="folder-row">
+                  <div class="row-chevron">▸</div>
+                  <div class="row-icon">▣</div>
+                  <div class="row-label">Travel Planning</div>
+                  <div class="row-count">0</div>
+                  <div class="row-menu">⋯</div>
+                </div>
+              </article>
+            </div>
+          </section>
+
+          <div class="separator"></div>
+
+          <section aria-labelledby="recent-heading">
+            <div class="section-label" id="recent-heading">Unassigned chats</div>
+
+            <div class="chat-stack">
+              <article class="chat-row is-dragging">
+                <div class="row-icon">◌</div>
+                <div class="row-label">Rust ownership recap</div>
+              </article>
+
+              <div class="ghost-slot" aria-hidden="true"></div>
+
+              <article class="chat-row">
+                <div class="row-icon">◌</div>
+                <div class="row-label">Weekly agenda planning</div>
+              </article>
+
+              <article class="chat-row">
+                <div class="row-icon">◌</div>
+                <div class="row-label">Prompt ideas for Chinese learning assistant</div>
+              </article>
+            </div>
+          </section>
+        </div>
+      </aside>
+
+      <section class="notes">
+        <section class="notes-card">
+          <h1>Inject folders into the native left history rail and make chats directly draggable.</h1>
+          <p>
+            这次不再把文件夹做成扩展 side panel 里的分类器，而是把它作为
+            `chatgpt.com` 左侧历史栏的一层本地组织结构。用户直接在原位创建文件夹、拖拽会话进去、展开文件夹查看内容；
+            export 保持完全独立。
+          </p>
+        </section>
+
+        <section class="notes-card">
+          <h2>我准备做的真实修改</h2>
+          <ul>
+            <li>在左侧 `#history` 容器顶部注入一个 extension 管理的 `Folders` 区域。</li>
+            <li>每个原生会话项继续使用 ChatGPT 自己的 `a[href^="/c/"]` 节点作为内容源，不改会话跳转行为。</li>
+            <li>扩展维护 `folderId -> conversationIds[]` 和 `conversationId -> folderId` 的本地映射，并在 DOM 里重组显示位置。</li>
+            <li>拖拽时只接受“会话项拖到文件夹头部或文件夹内容区”，不做任意位置排序。</li>
+            <li>ChatGPT rerender 左侧栏后，用 `MutationObserver` 重新挂载并恢复文件夹状态。</li>
+          </ul>
+        </section>
+
+        <section class="notes-card">
+          <h2>这版想让你 review 的点</h2>
+          <ul>
+            <li>文件夹固定在顶部，未分类会话继续留在下方，这个信息架构是否对。</li>
+            <li>拖拽反馈现在改成更原生的轻量高亮，而不是卡片式强装饰。</li>
+            <li>文件夹头部默认只露出名称、数量和一个更多菜单，是否足够克制。</li>
+            <li>空文件夹保留在列表里，作为长期收纳入口，是否符合你的预期。</li>
+          </ul>
+          <div class="chip-row">
+            <span class="chip teal">Open folder</span>
+            <span class="chip orange">Drop target</span>
+            <span class="chip">Unassigned chats</span>
+          </div>
+        </section>
+      </section>
+    </main>
+  </body>
+</html>

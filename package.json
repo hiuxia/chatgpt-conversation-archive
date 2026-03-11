@@ -4,9 +4,13 @@
   "private": true,
   "scripts": {
     "test:cdp": "node tests/cdp-markdown-smoke.test.js",
+    "test:content-dom": "node tests/sidebar-folders-dom-selftest.js",
+    "test:folders": "node tests/folder-store-selftest.js",
+    "test:markdown": "node tests/markdown-serializer-selftest.js",
     "test:zip": "node tests/zip-archive-selftest.js"
   },
   "devDependencies": {
+    "jsdom": "^28.1.0",
     "puppeteer-core": "^24.5.0"
   }
 }

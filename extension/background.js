@@ -4,7 +4,15 @@ const MESSAGE_TYPES = {
   EXPORT_SELECTED_FROM_ACTIVE_TAB: "EXPORT_SELECTED_FROM_ACTIVE_TAB",
   GET_HISTORY_FROM_ACTIVE_TAB: "GET_HISTORY_FROM_ACTIVE_TAB",
   EXTRACT_CURRENT_CONVERSATION: "EXTRACT_CURRENT_CONVERSATION",
-  EXTRACT_HISTORY_LINKS: "EXTRACT_HISTORY_LINKS"
+  EXTRACT_HISTORY_LINKS: "EXTRACT_HISTORY_LINKS",
+  GET_SIDEBAR_FOLDER_STATE: "GET_SIDEBAR_FOLDER_STATE",
+  CREATE_SIDEBAR_FOLDER: "CREATE_SIDEBAR_FOLDER",
+  RENAME_SIDEBAR_FOLDER: "RENAME_SIDEBAR_FOLDER",
+  DELETE_SIDEBAR_FOLDER: "DELETE_SIDEBAR_FOLDER",
+  ASSIGN_SIDEBAR_CONVERSATION: "ASSIGN_SIDEBAR_CONVERSATION",
+  CLEAR_SIDEBAR_CONVERSATION: "CLEAR_SIDEBAR_CONVERSATION",
+  SET_SIDEBAR_FOLDER_EXPANDED: "SET_SIDEBAR_FOLDER_EXPANDED",
+  SET_SIDEBAR_SECTION_EXPANDED: "SET_SIDEBAR_SECTION_EXPANDED"
 };
 
 const TEXT_ENCODER = new TextEncoder();
@@ -13,6 +21,16 @@ const EXTRACTION_RETRY_POLICY = {
   maxAttempts: 3,
   baseDelayMs: 800
 };
+const CONTENT_SCRIPT_FILES = [
+  "content/runtime.js",
+  "content/markdown-serializer.js",
+  "content/history-extractor.js",
+  "content/sidebar-folders.js",
+  "content.js"
+];
+const SIDEBAR_FOLDER_STORAGE_KEY = "sidebarFolders.v1";
+const SIDEBAR_FOLDER_SCHEMA_VERSION = 1;
+let sidebarFolderMutationQueue = Promise.resolve();
 
 chrome.runtime.onInstalled.addListener(async () => {
   try {
@@ -46,6 +64,78 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       .then((result) => sendResponse(result))
       .catch((error) =>
         sendResponse({ ok: false, error: error?.message || "History load failed" })
+      );
+    return true;
+  }
+
+  if (message?.type === MESSAGE_TYPES.GET_SIDEBAR_FOLDER_STATE) {
+    getSidebarFolderState()
+      .then((result) => sendResponse(result))
+      .catch((error) =>
+        sendResponse({ ok: false, error: error?.message || "Could not load folder state." })
+      );
+    return true;
+  }
+
+  if (message?.type === MESSAGE_TYPES.CREATE_SIDEBAR_FOLDER) {
+    createSidebarFolder(message.name)
+      .then((result) => sendResponse(result))
+      .catch((error) =>
+        sendResponse({ ok: false, error: error?.message || "Could not create folder." })
+      );
+    return true;
+  }
+
+  if (message?.type === MESSAGE_TYPES.RENAME_SIDEBAR_FOLDER) {
+    renameSidebarFolder(message.folderId, message.name)
+      .then((result) => sendResponse(result))
+      .catch((error) =>
+        sendResponse({ ok: false, error: error?.message || "Could not rename folder." })
+      );
+    return true;
+  }
+
+  if (message?.type === MESSAGE_TYPES.DELETE_SIDEBAR_FOLDER) {
+    deleteSidebarFolder(message.folderId)
+      .then((result) => sendResponse(result))
+      .catch((error) =>
+        sendResponse({ ok: false, error: error?.message || "Could not delete folder." })
+      );
+    return true;
+  }
+
+  if (message?.type === MESSAGE_TYPES.ASSIGN_SIDEBAR_CONVERSATION) {
+    assignSidebarConversation(message)
+      .then((result) => sendResponse(result))
+      .catch((error) =>
+        sendResponse({ ok: false, error: error?.message || "Could not assign conversation." })
+      );
+    return true;
+  }
+
+  if (message?.type === MESSAGE_TYPES.CLEAR_SIDEBAR_CONVERSATION) {
+    clearSidebarConversation(message.conversationId)
+      .then((result) => sendResponse(result))
+      .catch((error) =>
+        sendResponse({ ok: false, error: error?.message || "Could not clear conversation folder." })
+      );
+    return true;
+  }
+
+  if (message?.type === MESSAGE_TYPES.SET_SIDEBAR_FOLDER_EXPANDED) {
+    setSidebarFolderExpanded(message.folderId, message.expanded)
+      .then((result) => sendResponse(result))
+      .catch((error) =>
+        sendResponse({ ok: false, error: error?.message || "Could not update folder state." })
+      );
+    return true;
+  }
+
+  if (message?.type === MESSAGE_TYPES.SET_SIDEBAR_SECTION_EXPANDED) {
+    setSidebarSectionExpanded(message.expanded)
+      .then((result) => sendResponse(result))
+      .catch((error) =>
+        sendResponse({ ok: false, error: error?.message || "Could not update section state." })
       );
     return true;
   }
@@ -389,7 +479,7 @@ function sleep(ms) {
 async function reinjectContentScript(tabId) {
   await chrome.scripting.executeScript({
     target: { tabId },
-    files: ["content.js"]
+    files: CONTENT_SCRIPT_FILES
   });
 }
 
@@ -542,6 +632,282 @@ function sanitizeFilename(value) {
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 80);
+}
+
+async function getSidebarFolderState() {
+  const state = await readSidebarFolderState();
+  return {
+    ok: true,
+    state: cloneForMessage(state)
+  };
+}
+
+async function createSidebarFolder(name) {
+  const normalizedName = normalizeFolderName(name);
+  if (!normalizedName) {
+    return {
+      ok: false,
+      error: "Folder name is required."
+    };
+  }
+
+  const state = await mutateSidebarFolderState((draft) => {
+    const timestamp = new Date().toISOString();
+    const nextOrder =
+      draft.folders.reduce((max, folder) => Math.max(max, Number(folder.order) || 0), -1) + 1;
+
+    draft.folders.push({
+      id: createSidebarFolderId(),
+      name: normalizedName,
+      order: nextOrder,
+      expanded: true,
+      createdAt: timestamp,
+      updatedAt: timestamp
+    });
+  });
+
+  return { ok: true, state };
+}
+
+async function renameSidebarFolder(folderId, name) {
+  const normalizedName = normalizeFolderName(name);
+  if (!folderId) {
+    return { ok: false, error: "Folder id is required." };
+  }
+  if (!normalizedName) {
+    return { ok: false, error: "Folder name is required." };
+  }
+
+  const state = await mutateSidebarFolderState((draft) => {
+    const folder = draft.folders.find((item) => item.id === folderId);
+    if (!folder) {
+      throw new Error("Folder not found.");
+    }
+    folder.name = normalizedName;
+    folder.updatedAt = new Date().toISOString();
+  });
+
+  return { ok: true, state };
+}
+
+async function deleteSidebarFolder(folderId) {
+  if (!folderId) {
+    return { ok: false, error: "Folder id is required." };
+  }
+
+  const state = await mutateSidebarFolderState((draft) => {
+    const nextFolders = draft.folders.filter((item) => item.id !== folderId);
+    if (nextFolders.length === draft.folders.length) {
+      throw new Error("Folder not found.");
+    }
+
+    draft.folders = nextFolders;
+    for (const [conversationId, assignment] of Object.entries(draft.assignments)) {
+      if (assignment?.folderId === folderId) {
+        delete draft.assignments[conversationId];
+      }
+    }
+  });
+
+  return { ok: true, state };
+}
+
+async function assignSidebarConversation(payload) {
+  const conversationId = String(payload?.conversationId || "").trim();
+  const folderId = String(payload?.folderId || "").trim();
+  const title = normalizeSidebarConversationText(payload?.title);
+  const url = normalizeSidebarConversationUrl(payload?.url, conversationId);
+
+  if (!conversationId) {
+    return { ok: false, error: "Conversation id is required." };
+  }
+  if (!folderId) {
+    return { ok: false, error: "Folder id is required." };
+  }
+
+  const state = await mutateSidebarFolderState((draft) => {
+    const folder = draft.folders.find((item) => item.id === folderId);
+    if (!folder) {
+      throw new Error("Folder not found.");
+    }
+
+    draft.assignments[conversationId] = {
+      folderId,
+      title,
+      url,
+      updatedAt: new Date().toISOString()
+    };
+  });
+
+  return { ok: true, state };
+}
+
+async function clearSidebarConversation(conversationId) {
+  const normalizedId = String(conversationId || "").trim();
+  if (!normalizedId) {
+    return { ok: false, error: "Conversation id is required." };
+  }
+
+  const state = await mutateSidebarFolderState((draft) => {
+    delete draft.assignments[normalizedId];
+  });
+
+  return { ok: true, state };
+}
+
+async function setSidebarFolderExpanded(folderId, expanded) {
+  const normalizedId = String(folderId || "").trim();
+  if (!normalizedId) {
+    return { ok: false, error: "Folder id is required." };
+  }
+
+  const state = await mutateSidebarFolderState((draft) => {
+    const folder = draft.folders.find((item) => item.id === normalizedId);
+    if (!folder) {
+      throw new Error("Folder not found.");
+    }
+    folder.expanded = expanded !== false;
+    folder.updatedAt = new Date().toISOString();
+  });
+
+  return { ok: true, state };
+}
+
+async function setSidebarSectionExpanded(expanded) {
+  const state = await mutateSidebarFolderState((draft) => {
+    draft.ui.sectionExpanded = expanded !== false;
+  });
+
+  return { ok: true, state };
+}
+
+async function mutateSidebarFolderState(mutator) {
+  return enqueueSidebarFolderMutation(async () => {
+    const current = await readSidebarFolderState();
+    const draft = cloneSidebarFolderState(current);
+    mutator(draft);
+    const normalized = normalizeSidebarFolderState(draft);
+    await chrome.storage.local.set({
+      [SIDEBAR_FOLDER_STORAGE_KEY]: normalized
+    });
+    return cloneForMessage(normalized);
+  });
+}
+
+function enqueueSidebarFolderMutation(task) {
+  const run = sidebarFolderMutationQueue.then(task, task);
+  sidebarFolderMutationQueue = run.then(
+    () => undefined,
+    () => undefined
+  );
+  return run;
+}
+
+async function readSidebarFolderState() {
+  const stored = await chrome.storage.local.get(SIDEBAR_FOLDER_STORAGE_KEY);
+  return normalizeSidebarFolderState(stored?.[SIDEBAR_FOLDER_STORAGE_KEY]);
+}
+
+function normalizeSidebarFolderState(rawState) {
+  const rawFolders = Array.isArray(rawState?.folders) ? rawState.folders : [];
+  const rawAssignments =
+    rawState?.assignments && typeof rawState.assignments === "object" ? rawState.assignments : {};
+  const rawUi = rawState?.ui && typeof rawState.ui === "object" ? rawState.ui : {};
+
+  const folders = rawFolders
+    .map((folder, index) => normalizeSidebarFolder(folder, index))
+    .filter(Boolean)
+    .sort((left, right) => {
+      const orderDelta = left.order - right.order;
+      if (orderDelta !== 0) return orderDelta;
+      return left.name.localeCompare(right.name);
+    });
+
+  const knownFolderIds = new Set(folders.map((folder) => folder.id));
+  const assignments = {};
+  for (const [conversationId, assignment] of Object.entries(rawAssignments)) {
+    const normalizedId = String(conversationId || "").trim();
+    if (!normalizedId) continue;
+    if (!assignment || typeof assignment !== "object") continue;
+    if (!knownFolderIds.has(String(assignment.folderId || "").trim())) continue;
+
+    assignments[normalizedId] = {
+      folderId: String(assignment.folderId).trim(),
+      title: normalizeSidebarConversationText(assignment.title),
+      url: normalizeSidebarConversationUrl(assignment.url, normalizedId),
+      updatedAt: normalizeIsoTimestamp(assignment.updatedAt)
+    };
+  }
+
+  return {
+    schemaVersion: SIDEBAR_FOLDER_SCHEMA_VERSION,
+    folders,
+    assignments,
+    ui: {
+      sectionExpanded: rawUi.sectionExpanded !== false
+    }
+  };
+}
+
+function normalizeSidebarFolder(rawFolder, index) {
+  if (!rawFolder || typeof rawFolder !== "object") return null;
+
+  const id = String(rawFolder.id || "").trim();
+  const name = normalizeFolderName(rawFolder.name);
+  if (!id || !name) return null;
+
+  return {
+    id,
+    name,
+    order: Number.isFinite(Number(rawFolder.order)) ? Number(rawFolder.order) : index,
+    expanded: rawFolder.expanded !== false,
+    createdAt: normalizeIsoTimestamp(rawFolder.createdAt),
+    updatedAt: normalizeIsoTimestamp(rawFolder.updatedAt)
+  };
+}
+
+function normalizeFolderName(value) {
+  return String(value || "").replace(/\s+/g, " ").trim().slice(0, 60);
+}
+
+function normalizeSidebarConversationText(value) {
+  return String(value || "").replace(/\s+/g, " ").trim().slice(0, 200);
+}
+
+function normalizeSidebarConversationUrl(value, conversationId) {
+  const rawValue = String(value || "").trim();
+  if (rawValue.startsWith("https://chatgpt.com/c/")) {
+    return rawValue;
+  }
+  const id = String(conversationId || "").trim();
+  return id ? `https://chatgpt.com/c/${id}` : "";
+}
+
+function normalizeIsoTimestamp(value) {
+  const date = value ? new Date(value) : new Date();
+  return Number.isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString();
+}
+
+function cloneSidebarFolderState(state) {
+  return {
+    schemaVersion: state.schemaVersion,
+    folders: state.folders.map((folder) => ({ ...folder })),
+    assignments: Object.fromEntries(
+      Object.entries(state.assignments).map(([key, value]) => [key, { ...value }])
+    ),
+    ui: {
+      sectionExpanded: state.ui.sectionExpanded !== false
+    }
+  };
+}
+
+function cloneForMessage(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function createSidebarFolderId() {
+  const random = Math.random().toString(36).slice(2, 10);
+  return `fld_${Date.now().toString(36)}_${random}`;
 }
 
 function createZipArchive(files) {

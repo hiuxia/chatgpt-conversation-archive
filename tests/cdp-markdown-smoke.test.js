@@ -3,7 +3,7 @@ const path = require("path");
 const puppeteer = require("puppeteer-core");
 
 const PROJECT_ROOT = path.resolve(__dirname, "..");
-const CONTENT_SCRIPT_PATH = path.join(PROJECT_ROOT, "extension", "content.js");
+const MANIFEST_PATH = path.join(PROJECT_ROOT, "extension", "manifest.json");
 const REPORT_PATH = path.join(__dirname, "reports", "cdp-markdown-smoke-report.json");
 
 function assert(condition, message) {
@@ -17,7 +17,10 @@ async function sleep(ms) {
 }
 
 async function run() {
-  const contentScriptSource = fs.readFileSync(CONTENT_SCRIPT_PATH, "utf8");
+  const manifest = JSON.parse(fs.readFileSync(MANIFEST_PATH, "utf8"));
+  const contentScriptSources = manifest.content_scripts[0].js.map((relativePath) =>
+    fs.readFileSync(path.join(PROJECT_ROOT, "extension", relativePath), "utf8")
+  );
   const browser = await puppeteer.connect({
     browserURL: "http://127.0.0.1:9222",
     defaultViewport: null
@@ -47,7 +50,7 @@ async function run() {
     await page.goto(conversationUrl, { waitUntil: "networkidle2", timeout: 120000 });
     await sleep(2500);
 
-    const extractionResult = await page.evaluate(async (src) => {
+    const extractionResult = await page.evaluate(async (sources) => {
       const originalChrome = globalThis.chrome;
       const fakeRuntime = {
         onMessage: {
@@ -76,10 +79,12 @@ async function run() {
           globalThis.chrome.runtime = fakeRuntime;
         }
 
-        eval(src);
+        for (const src of sources) {
+          eval(src);
+        }
 
         if (typeof globalThis.__archive_listener !== "function") {
-          return { ok: false, error: "content.js listener was not registered" };
+          return { ok: false, error: "content script listener was not registered" };
         }
 
         const response = await new Promise((resolve) => {
@@ -128,7 +133,7 @@ async function run() {
         }
         delete globalThis.__archive_listener;
       }
-    }, contentScriptSource);
+    }, contentScriptSources);
 
     assert(extractionResult.ok, `Extraction runtime failed: ${extractionResult.error || "unknown"}`);
     assert(extractionResult.responseOk, "EXTRACT_CURRENT_CONVERSATION response is not ok.");
