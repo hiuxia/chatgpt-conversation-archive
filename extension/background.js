@@ -27,6 +27,7 @@ const CONTENT_SCRIPT_FILES = [
   "content/runtime.js",
   "content/markdown-serializer.js",
   "content/history-extractor.js",
+  "content/conversation-toc.js",
   "content/sidebar-folders.js",
   "content.js"
 ];

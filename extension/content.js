@@ -10,6 +10,7 @@
   }
 
   ns.initializeSidebarFolderController();
+  ns.initializeConversationTocController();
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message?.type === ns.MESSAGE_TYPES.PING) {

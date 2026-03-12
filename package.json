@@ -5,6 +5,7 @@
   "scripts": {
     "test:cdp": "node tests/cdp-markdown-smoke.test.js",
     "test:content-dom": "node tests/sidebar-folders-dom-selftest.js",
+    "test:toc": "node tests/conversation-toc-dom-selftest.js",
     "test:folders": "node tests/folder-store-selftest.js",
     "test:markdown": "node tests/markdown-serializer-selftest.js",
     "test:release": "node tests/release-lib-selftest.js",

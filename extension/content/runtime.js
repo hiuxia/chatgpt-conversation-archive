@@ -31,6 +31,7 @@
     ],
     sidebarNav: ['nav[aria-label="Chat history"]'],
     historyAnchors: ['a[href^="/c/"]', 'a[href*="/c/"]'],
+    conversationMain: ["main"],
     turnArticles: ['article[data-testid^="conversation-turn-"]'],
     roleNodes: ["[data-message-author-role]"],
     assistantMarkdown: [".markdown.prose", ".markdown", "[class*='markdown']"]
@@ -72,6 +73,32 @@
     renameInput: "cgca-folder-rename-input"
   };
 
+  ns.CONVERSATION_TOC_CLASSES = {
+    rail: "cgca-conversation-toc-rail",
+    pill: "cgca-conversation-toc-pill",
+    surface: "cgca-conversation-toc-surface",
+    dotsViewport: "cgca-conversation-toc-dots-viewport",
+    dots: "cgca-conversation-toc-dots",
+    dot: "cgca-conversation-toc-dot",
+    dotActive: "is-active",
+    dotCore: "cgca-conversation-toc-dot-core",
+    branch: "cgca-conversation-toc-branch",
+    branchMark: "cgca-conversation-toc-branch-mark",
+    branchMarkActive: "is-active",
+    card: "cgca-conversation-toc-card",
+    cardEyebrow: "cgca-conversation-toc-card-eyebrow",
+    cardTitle: "cgca-conversation-toc-card-title",
+    cardMeta: "cgca-conversation-toc-card-meta",
+    cardExcerpt: "cgca-conversation-toc-card-excerpt",
+    cardActions: "cgca-conversation-toc-card-actions",
+    cardActionButton: "cgca-conversation-toc-card-action-button",
+    outline: "cgca-conversation-toc-outline",
+    outlineItem: "cgca-conversation-toc-outline-item",
+    outlineItemMinor: "is-minor",
+    outlineItemActive: "is-active",
+    empty: "cgca-conversation-toc-empty"
+  };
+
   ns.queryAllByFallbackSelectors = function queryAllByFallbackSelectors(root, selectors) {
     for (const selector of selectors) {
       const nodes = Array.from(root.querySelectorAll(selector));
@@ -94,6 +121,10 @@
 
   ns.cleanText = function cleanText(text) {
     return (text || "").replace(/\r\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+  };
+
+  ns.isConversationRoute = function isConversationRoute(pathname = window.location.pathname) {
+    return /\/c\/[0-9a-f-]+/i.test(String(pathname || ""));
   };
 
   ns.sleep = function sleep(ms) {
@@ -131,6 +162,10 @@
 
   ns.findConversationAnchor = function findConversationAnchor(conversationId) {
     return document.querySelector(`a[data-cgca-conversation-id="${CSS.escape(conversationId)}"]`);
+  };
+
+  ns.queryConversationMain = function queryConversationMain() {
+    return ns.findFirstByFallbackSelectors(document, ns.SELECTOR_MAP.conversationMain);
   };
 
   ns.sendRuntimeMessage = async function sendRuntimeMessage(message) {
