@@ -1,17 +1,27 @@
 {
   "manifest_version": 3,
   "name": "ChatGPT Voyager",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Organize ChatGPT chats with sidebar folders and export conversations to Markdown.",
-  "permissions": ["storage", "downloads", "tabs", "sidePanel", "scripting"],
-  "host_permissions": ["https://chatgpt.com/*"],
+  "permissions": [
+    "storage",
+    "downloads",
+    "tabs",
+    "sidePanel",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://chatgpt.com/*"
+  ],
   "background": {
     "service_worker": "background.js",
     "type": "module"
   },
   "content_scripts": [
     {
-      "matches": ["https://chatgpt.com/*"],
+      "matches": [
+        "https://chatgpt.com/*"
+      ],
       "js": [
         "content/runtime.js",
         "content/markdown-serializer.js",

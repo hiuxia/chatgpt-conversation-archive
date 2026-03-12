@@ -1,6 +1,6 @@
 {
   "name": "chatgpt-voyager",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "scripts": {
     "test:cdp": "node tests/cdp-markdown-smoke.test.js",
