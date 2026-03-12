@@ -6,7 +6,9 @@ const MESSAGE_TYPES = {
   EXTRACT_CURRENT_CONVERSATION: "EXTRACT_CURRENT_CONVERSATION",
   EXTRACT_HISTORY_LINKS: "EXTRACT_HISTORY_LINKS",
   GET_SIDEBAR_FOLDER_STATE: "GET_SIDEBAR_FOLDER_STATE",
+  UPSERT_SIDEBAR_CONVERSATIONS: "UPSERT_SIDEBAR_CONVERSATIONS",
   CREATE_SIDEBAR_FOLDER: "CREATE_SIDEBAR_FOLDER",
+  MOVE_SIDEBAR_FOLDER: "MOVE_SIDEBAR_FOLDER",
   RENAME_SIDEBAR_FOLDER: "RENAME_SIDEBAR_FOLDER",
   DELETE_SIDEBAR_FOLDER: "DELETE_SIDEBAR_FOLDER",
   ASSIGN_SIDEBAR_CONVERSATION: "ASSIGN_SIDEBAR_CONVERSATION",
@@ -29,7 +31,7 @@ const CONTENT_SCRIPT_FILES = [
   "content.js"
 ];
 const SIDEBAR_FOLDER_STORAGE_KEY = "sidebarFolders.v1";
-const SIDEBAR_FOLDER_SCHEMA_VERSION = 1;
+const SIDEBAR_FOLDER_SCHEMA_VERSION = 3;
 let sidebarFolderMutationQueue = Promise.resolve();
 
 chrome.runtime.onInstalled.addListener(async () => {
@@ -77,11 +79,29 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
 
+  if (message?.type === MESSAGE_TYPES.UPSERT_SIDEBAR_CONVERSATIONS) {
+    upsertSidebarConversationCatalog(message.items, message.source)
+      .then((result) => sendResponse(result))
+      .catch((error) =>
+        sendResponse({ ok: false, error: error?.message || "Could not update conversation cache." })
+      );
+    return true;
+  }
+
   if (message?.type === MESSAGE_TYPES.CREATE_SIDEBAR_FOLDER) {
-    createSidebarFolder(message.name)
+    createSidebarFolder(message.name, message.parentFolderId)
       .then((result) => sendResponse(result))
       .catch((error) =>
         sendResponse({ ok: false, error: error?.message || "Could not create folder." })
+      );
+    return true;
+  }
+
+  if (message?.type === MESSAGE_TYPES.MOVE_SIDEBAR_FOLDER) {
+    moveSidebarFolder(message.folderId, message.parentFolderId)
+      .then((result) => sendResponse(result))
+      .catch((error) =>
+        sendResponse({ ok: false, error: error?.message || "Could not move folder." })
       );
     return true;
   }
@@ -162,6 +182,16 @@ async function exportCurrentFromActiveTab() {
   }
 
   const payload = response.data;
+  await upsertSidebarConversationCatalog(
+    [
+      {
+        id: payload.id,
+        title: payload.title,
+        url: payload.sourceUrl
+      }
+    ],
+    "current"
+  );
   const markdown = toMarkdown(payload);
   const filename = buildMarkdownFilename(payload);
   await downloadTextFile(markdown, filename);
@@ -185,6 +215,7 @@ async function exportSelectedFromActiveTab(rawItems) {
 
   const files = [];
   const failures = [];
+  const extractedCatalogItems = [];
 
   for (let i = 0; i < items.length; i += 1) {
     const item = items[i];
@@ -192,6 +223,11 @@ async function exportSelectedFromActiveTab(rawItems) {
       const payload = await extractConversationFromUrl(item.url);
       const markdown = toMarkdown(payload);
       const mdFilename = buildMarkdownFilename(payload).replace(/^ChatGPT\//, "");
+      extractedCatalogItems.push({
+        id: payload.id,
+        title: payload.title,
+        url: payload.sourceUrl
+      });
       files.push({
         name: mdFilename,
         data: TEXT_ENCODER.encode(markdown)
@@ -214,6 +250,10 @@ async function exportSelectedFromActiveTab(rawItems) {
       failedCount: failures.length,
       failures
     };
+  }
+
+  if (extractedCatalogItems.length > 0) {
+    await upsertSidebarConversationCatalog(extractedCatalogItems, "current");
   }
 
   const zipFilename = buildZipFilename(files.length);
@@ -241,6 +281,10 @@ async function getHistoryFromActiveTab() {
       ok: false,
       error: response?.error || "Could not load history links."
     };
+  }
+
+  if (Array.isArray(response.items) && response.items.length > 0) {
+    await upsertSidebarConversationCatalog(response.items, "history");
   }
 
   return {
@@ -642,8 +686,9 @@ async function getSidebarFolderState() {
   };
 }
 
-async function createSidebarFolder(name) {
+async function createSidebarFolder(name, parentFolderId = null) {
   const normalizedName = normalizeFolderName(name);
+  const normalizedParentId = normalizeParentFolderId(parentFolderId);
   if (!normalizedName) {
     return {
       ok: false,
@@ -653,12 +698,15 @@ async function createSidebarFolder(name) {
 
   const state = await mutateSidebarFolderState((draft) => {
     const timestamp = new Date().toISOString();
-    const nextOrder =
-      draft.folders.reduce((max, folder) => Math.max(max, Number(folder.order) || 0), -1) + 1;
+    if (normalizedParentId && !draft.folders.some((folder) => folder.id === normalizedParentId)) {
+      throw new Error("Parent folder not found.");
+    }
+    const nextOrder = getNextSiblingOrder(draft.folders, normalizedParentId);
 
     draft.folders.push({
       id: createSidebarFolderId(),
       name: normalizedName,
+      parentFolderId: normalizedParentId,
       order: nextOrder,
       expanded: true,
       createdAt: timestamp,
@@ -690,18 +738,72 @@ async function renameSidebarFolder(folderId, name) {
   return { ok: true, state };
 }
 
+async function moveSidebarFolder(folderId, parentFolderId) {
+  const normalizedId = String(folderId || "").trim();
+  const normalizedParentId = normalizeParentFolderId(parentFolderId);
+  if (!normalizedId) {
+    return { ok: false, error: "Folder id is required." };
+  }
+
+  try {
+    const state = await mutateSidebarFolderState((draft) => {
+      const folder = draft.folders.find((item) => item.id === normalizedId);
+      if (!folder) {
+        throw new Error("Folder not found.");
+      }
+      if (normalizedParentId === normalizedId) {
+        throw new Error("A folder cannot be moved into itself.");
+      }
+      if (normalizedParentId && !draft.folders.some((item) => item.id === normalizedParentId)) {
+        throw new Error("Parent folder not found.");
+      }
+      if (
+        normalizedParentId &&
+        wouldCreateFolderCycle(draft.folders, normalizedId, normalizedParentId)
+      ) {
+        throw new Error("A folder cannot be moved into its descendant.");
+      }
+
+      folder.parentFolderId = normalizedParentId;
+      folder.order = getNextSiblingOrder(
+        draft.folders.filter((item) => item.id !== normalizedId),
+        normalizedParentId
+      );
+      folder.updatedAt = new Date().toISOString();
+    });
+
+    return { ok: true, state };
+  } catch (error) {
+    return { ok: false, error: error?.message || "Could not move folder." };
+  }
+}
+
 async function deleteSidebarFolder(folderId) {
   if (!folderId) {
     return { ok: false, error: "Folder id is required." };
   }
 
   const state = await mutateSidebarFolderState((draft) => {
+    const deletedFolder = draft.folders.find((item) => item.id === folderId);
+    if (!deletedFolder) {
+      throw new Error("Folder not found.");
+    }
+
     const nextFolders = draft.folders.filter((item) => item.id !== folderId);
     if (nextFolders.length === draft.folders.length) {
       throw new Error("Folder not found.");
     }
 
-    draft.folders = nextFolders;
+    draft.folders = nextFolders.map((item) =>
+      item.parentFolderId === folderId
+        ? {
+            ...item,
+            parentFolderId: deletedFolder.parentFolderId,
+            order: getNextSiblingOrder(nextFolders.filter((folder) => folder.id !== item.id), deletedFolder.parentFolderId),
+            updatedAt: new Date().toISOString()
+          }
+        : item
+    );
     for (const [conversationId, assignment] of Object.entries(draft.assignments)) {
       if (assignment?.folderId === folderId) {
         delete draft.assignments[conversationId];
@@ -737,6 +839,17 @@ async function assignSidebarConversation(payload) {
       url,
       updatedAt: new Date().toISOString()
     };
+    upsertConversationCatalogEntries(
+      draft,
+      [
+        {
+          id: conversationId,
+          title,
+          url
+        }
+      ],
+      "assignment"
+    );
   });
 
   return { ok: true, state };
@@ -781,6 +894,19 @@ async function setSidebarSectionExpanded(expanded) {
   return { ok: true, state };
 }
 
+async function upsertSidebarConversationCatalog(items, source = "history") {
+  const normalizedItems = normalizeConversationCatalogInput(items);
+  if (!normalizedItems.length) {
+    return { ok: true, state: await readSidebarFolderState() };
+  }
+
+  const state = await mutateSidebarFolderState((draft) => {
+    upsertConversationCatalogEntries(draft, normalizedItems, source);
+  });
+
+  return { ok: true, state };
+}
+
 async function mutateSidebarFolderState(mutator) {
   return enqueueSidebarFolderMutation(async () => {
     const current = await readSidebarFolderState();
@@ -812,16 +938,26 @@ function normalizeSidebarFolderState(rawState) {
   const rawFolders = Array.isArray(rawState?.folders) ? rawState.folders : [];
   const rawAssignments =
     rawState?.assignments && typeof rawState.assignments === "object" ? rawState.assignments : {};
+  const rawConversationCatalog =
+    rawState?.conversationCatalog && typeof rawState.conversationCatalog === "object"
+      ? rawState.conversationCatalog
+      : {};
   const rawUi = rawState?.ui && typeof rawState.ui === "object" ? rawState.ui : {};
 
   const folders = rawFolders
     .map((folder, index) => normalizeSidebarFolder(folder, index))
     .filter(Boolean)
     .sort((left, right) => {
+      const parentDelta = compareParentFolderIds(left.parentFolderId, right.parentFolderId);
+      if (parentDelta !== 0) return parentDelta;
       const orderDelta = left.order - right.order;
       if (orderDelta !== 0) return orderDelta;
       return left.name.localeCompare(right.name);
-    });
+    })
+    .map((folder, _index, list) => ({
+      ...folder,
+      parentFolderId: resolveNormalizedParentFolderId(list, folder)
+    }));
 
   const knownFolderIds = new Set(folders.map((folder) => folder.id));
   const assignments = {};
@@ -839,10 +975,36 @@ function normalizeSidebarFolderState(rawState) {
     };
   }
 
+  const conversationCatalog = {};
+  for (const [conversationId, entry] of Object.entries(rawConversationCatalog)) {
+    const normalizedEntry = normalizeConversationCatalogEntry(entry, conversationId);
+    if (!normalizedEntry) continue;
+    conversationCatalog[normalizedEntry.id] = normalizedEntry;
+  }
+
+  for (const [conversationId, assignment] of Object.entries(assignments)) {
+    const fallbackEntry = normalizeConversationCatalogEntry(
+      {
+        id: conversationId,
+        title: assignment.title,
+        url: assignment.url,
+        lastSeenAt: assignment.updatedAt,
+        lastSeenSource: "assignment"
+      },
+      conversationId
+    );
+    if (!fallbackEntry) continue;
+    conversationCatalog[conversationId] = mergeConversationCatalogEntry(
+      fallbackEntry,
+      conversationCatalog[conversationId]
+    );
+  }
+
   return {
     schemaVersion: SIDEBAR_FOLDER_SCHEMA_VERSION,
     folders,
     assignments,
+    conversationCatalog,
     ui: {
       sectionExpanded: rawUi.sectionExpanded !== false
     }
@@ -859,6 +1021,7 @@ function normalizeSidebarFolder(rawFolder, index) {
   return {
     id,
     name,
+    parentFolderId: normalizeParentFolderId(rawFolder.parentFolderId),
     order: Number.isFinite(Number(rawFolder.order)) ? Number(rawFolder.order) : index,
     expanded: rawFolder.expanded !== false,
     createdAt: normalizeIsoTimestamp(rawFolder.createdAt),
@@ -870,8 +1033,75 @@ function normalizeFolderName(value) {
   return String(value || "").replace(/\s+/g, " ").trim().slice(0, 60);
 }
 
+function normalizeParentFolderId(value) {
+  const normalized = String(value || "").trim();
+  return normalized || null;
+}
+
+function resolveNormalizedParentFolderId(folders, folder) {
+  const immediateParentId = normalizeParentFolderId(folder?.parentFolderId);
+  if (!immediateParentId) {
+    return null;
+  }
+
+  const folderById = new Map(folders.map((item) => [item.id, item]));
+  if (!folderById.has(immediateParentId)) {
+    return null;
+  }
+
+  const seen = new Set([folder.id]);
+  let cursorId = immediateParentId;
+  while (cursorId) {
+    if (seen.has(cursorId)) {
+      return null;
+    }
+    seen.add(cursorId);
+    const currentFolder = folderById.get(cursorId);
+    cursorId = normalizeParentFolderId(currentFolder?.parentFolderId);
+  }
+
+  return immediateParentId;
+}
+
 function normalizeSidebarConversationText(value) {
   return String(value || "").replace(/\s+/g, " ").trim().slice(0, 200);
+}
+
+function normalizeConversationCatalogInput(items) {
+  if (!Array.isArray(items)) return [];
+
+  const deduped = [];
+  const seen = new Set();
+  for (const item of items) {
+    const normalizedItem = normalizeConversationCatalogEntry(item, item?.id);
+    if (!normalizedItem) continue;
+    if (seen.has(normalizedItem.id)) continue;
+    seen.add(normalizedItem.id);
+    deduped.push(normalizedItem);
+  }
+  return deduped;
+}
+
+function normalizeConversationCatalogEntry(rawEntry, fallbackConversationId) {
+  if (!rawEntry || typeof rawEntry !== "object") return null;
+
+  const id = String(rawEntry.id || fallbackConversationId || "").trim();
+  const title = normalizeSidebarConversationText(rawEntry.title);
+  const url = normalizeSidebarConversationUrl(rawEntry.url, id);
+  if (!id || !url) return null;
+
+  return {
+    id,
+    title: title || "Untitled",
+    url,
+    lastSeenAt: normalizeIsoTimestamp(rawEntry.lastSeenAt || rawEntry.updatedAt),
+    lastSeenSource: normalizeConversationCatalogSource(rawEntry.lastSeenSource)
+  };
+}
+
+function normalizeConversationCatalogSource(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  return normalized || "history";
 }
 
 function normalizeSidebarConversationUrl(value, conversationId) {
@@ -895,10 +1125,61 @@ function cloneSidebarFolderState(state) {
     assignments: Object.fromEntries(
       Object.entries(state.assignments).map(([key, value]) => [key, { ...value }])
     ),
+    conversationCatalog: Object.fromEntries(
+      Object.entries(state.conversationCatalog || {}).map(([key, value]) => [key, { ...value }])
+    ),
     ui: {
       sectionExpanded: state.ui.sectionExpanded !== false
     }
   };
+}
+
+function mergeConversationCatalogEntry(baseEntry, existingEntry) {
+  if (!existingEntry) {
+    return { ...baseEntry };
+  }
+
+  const existingSeenAt = new Date(existingEntry.lastSeenAt || 0).getTime();
+  const baseSeenAt = new Date(baseEntry.lastSeenAt || 0).getTime();
+  const preferBase = baseSeenAt >= existingSeenAt;
+  const preferredTitle = preferBase
+    ? normalizeSidebarConversationText(baseEntry.title) || normalizeSidebarConversationText(existingEntry.title)
+    : normalizeSidebarConversationText(existingEntry.title) || normalizeSidebarConversationText(baseEntry.title);
+  const preferredUrl = preferBase
+    ? normalizeSidebarConversationUrl(baseEntry.url, baseEntry.id || existingEntry.id)
+    : normalizeSidebarConversationUrl(existingEntry.url, existingEntry.id || baseEntry.id);
+
+  return {
+    id: existingEntry.id || baseEntry.id,
+    title: preferredTitle || baseEntry.title,
+    url: preferredUrl || baseEntry.url,
+    lastSeenAt:
+      existingSeenAt >= baseSeenAt
+        ? normalizeIsoTimestamp(existingEntry.lastSeenAt)
+        : normalizeIsoTimestamp(baseEntry.lastSeenAt),
+    lastSeenSource:
+      existingSeenAt >= baseSeenAt
+        ? normalizeConversationCatalogSource(existingEntry.lastSeenSource)
+        : normalizeConversationCatalogSource(baseEntry.lastSeenSource)
+  };
+}
+
+function upsertConversationCatalogEntries(draft, items, source = "history") {
+  if (!draft.conversationCatalog || typeof draft.conversationCatalog !== "object") {
+    draft.conversationCatalog = {};
+  }
+
+  for (const item of normalizeConversationCatalogInput(items)) {
+    const nextEntry = {
+      ...item,
+      lastSeenSource: normalizeConversationCatalogSource(source || item.lastSeenSource),
+      lastSeenAt: normalizeIsoTimestamp(item.lastSeenAt)
+    };
+    draft.conversationCatalog[item.id] = mergeConversationCatalogEntry(
+      nextEntry,
+      draft.conversationCatalog[item.id]
+    );
+  }
 }
 
 function cloneForMessage(value) {
@@ -908,6 +1189,40 @@ function cloneForMessage(value) {
 function createSidebarFolderId() {
   const random = Math.random().toString(36).slice(2, 10);
   return `fld_${Date.now().toString(36)}_${random}`;
+}
+
+function getNextSiblingOrder(folders, parentFolderId) {
+  const normalizedParentId = normalizeParentFolderId(parentFolderId);
+  return (
+    folders
+      .filter((folder) => normalizeParentFolderId(folder.parentFolderId) === normalizedParentId)
+      .reduce((max, folder) => Math.max(max, Number(folder.order) || 0), -1) + 1
+  );
+}
+
+function wouldCreateFolderCycle(folders, folderId, nextParentFolderId) {
+  let currentId = normalizeParentFolderId(nextParentFolderId);
+  const seen = new Set();
+
+  while (currentId) {
+    if (currentId === folderId) {
+      return true;
+    }
+    if (seen.has(currentId)) {
+      return true;
+    }
+    seen.add(currentId);
+    const currentFolder = folders.find((folder) => folder.id === currentId);
+    currentId = normalizeParentFolderId(currentFolder?.parentFolderId);
+  }
+
+  return false;
+}
+
+function compareParentFolderIds(left, right) {
+  const leftId = normalizeParentFolderId(left) || "";
+  const rightId = normalizeParentFolderId(right) || "";
+  return leftId.localeCompare(rightId);
 }
 
 function createZipArchive(files) {

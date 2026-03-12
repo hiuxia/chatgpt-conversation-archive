@@ -24,8 +24,11 @@
       isRendering: false,
       ignoreObservedMutations: false,
       dragConversationId: "",
+      dragFolderId: "",
       dragTargetKey: "",
+      visibleConversationSignature: "",
       isCreatingFolder: false,
+      createParentFolderId: null,
       createDraft: "",
       openMenuFolderId: "",
       renamingFolderId: "",
@@ -153,6 +156,7 @@
             state: this.state,
             section: foldersSection
           });
+          ns.removeManagedCachedSidebarChats(nav);
           ns.decorateUnassignedSection({
             controller: this,
             yourChatsSection,
@@ -165,6 +169,7 @@
             folderContainers,
             state: this.state
           });
+          void this.syncVisibleConversationCatalog(nav);
         } finally {
           this.isRendering = false;
           this.observerResumeTimer = setTimeout(() => {
@@ -174,14 +179,41 @@
         }
       },
 
-      beginCreateFolder() {
+      async syncVisibleConversationCatalog(nav) {
+        const items = ns.collectVisibleNativeConversationItems(nav);
+        if (!items.length) return;
+
+        const signature = items
+          .map((item) => `${item.id}|${item.title}|${item.url}`)
+          .join("\n");
+        if (signature === this.visibleConversationSignature) {
+          return;
+        }
+
+        this.visibleConversationSignature = signature;
+        const response = await ns.sendRuntimeMessage({
+          type: ns.MESSAGE_TYPES.UPSERT_SIDEBAR_CONVERSATIONS,
+          items,
+          source: "history"
+        });
+        if (response?.ok && response.state) {
+          this.state = response.state;
+        }
+      },
+
+      beginCreateFolder(parentFolderId = null) {
         this.isCreatingFolder = true;
+        this.createParentFolderId = parentFolderId || null;
         this.createDraft = "";
+        this.openMenuFolderId = "";
+        this.renamingFolderId = "";
+        this.pendingDeleteFolderId = "";
         this.scheduleRender(0);
       },
 
       cancelCreateFolder() {
         this.isCreatingFolder = false;
+        this.createParentFolderId = null;
         this.createDraft = "";
         this.scheduleRender(0);
       },
@@ -193,7 +225,8 @@
       async submitCreateFolder() {
         const response = await ns.sendRuntimeMessage({
           type: ns.MESSAGE_TYPES.CREATE_SIDEBAR_FOLDER,
-          name: this.createDraft
+          name: this.createDraft,
+          parentFolderId: this.createParentFolderId
         });
         if (!response?.ok || !response?.state) {
           window.alert(response?.error || "Could not create folder.");
@@ -201,6 +234,7 @@
         }
         this.state = response.state;
         this.isCreatingFolder = false;
+        this.createParentFolderId = null;
         this.createDraft = "";
         this.scheduleRender(0);
       },
@@ -385,6 +419,7 @@
         if (!conversationId) return;
 
         this.dragConversationId = conversationId;
+        this.dragFolderId = "";
         this.dragTargetKey = "";
         anchor.classList.add(ns.SIDEBAR_FOLDER_CLASSES.dragging);
         if (event.dataTransfer) {
@@ -396,6 +431,24 @@
       handleDragEnd(anchor) {
         anchor.classList.remove(ns.SIDEBAR_FOLDER_CLASSES.dragging);
         this.dragConversationId = "";
+        this.setDragTarget("");
+      },
+
+      handleFolderDragStart(element, event) {
+        const folderId = String(element?.dataset?.folderId || "").trim();
+        if (!folderId) return;
+
+        this.dragFolderId = folderId;
+        this.dragConversationId = "";
+        this.dragTargetKey = "";
+        if (event.dataTransfer) {
+          event.dataTransfer.effectAllowed = "move";
+          event.dataTransfer.setData("text/plain", folderId);
+        }
+      },
+
+      handleFolderDragEnd() {
+        this.dragFolderId = "";
         this.setDragTarget("");
       },
 
@@ -450,9 +503,35 @@
         this.scheduleRender(0);
       },
 
+      async moveDraggedFolder(parentFolderId) {
+        const folderId = this.dragFolderId;
+        if (!folderId) return;
+
+        const response = await ns.sendRuntimeMessage({
+          type: ns.MESSAGE_TYPES.MOVE_SIDEBAR_FOLDER,
+          folderId,
+          parentFolderId: parentFolderId || null
+        });
+
+        if (!response?.ok || !response?.state) {
+          window.alert(response?.error || "Could not move folder.");
+          return;
+        }
+
+        this.state = response.state;
+        this.dragFolderId = "";
+        this.setDragTarget("");
+        this.scheduleRender(0);
+      },
+
       async clearDraggedConversationFolder() {
         const conversationId = this.dragConversationId;
-        if (!conversationId) return;
+        if (!conversationId && !this.dragFolderId) return;
+
+        if (this.dragFolderId) {
+          await this.moveDraggedFolder(null);
+          return;
+        }
 
         const response = await ns.sendRuntimeMessage({
           type: ns.MESSAGE_TYPES.CLEAR_SIDEBAR_CONVERSATION,
@@ -515,8 +594,16 @@
     }
   };
 
+  ns.removeManagedCachedSidebarChats = function removeManagedCachedSidebarChats(root) {
+    if (!root) return;
+    for (const cachedRow of root.querySelectorAll(`[data-cgca-cached="true"]`)) {
+      cachedRow.remove();
+    }
+  };
+
   ns.renderFoldersSection = function renderFoldersSection({ controller, state, section }) {
     section.textContent = "";
+    const tree = ns.buildFolderTree(state?.folders || []);
 
     const headerButton = document.createElement("button");
     headerButton.type = "button";
@@ -536,44 +623,8 @@
       return new Map();
     }
 
-    if (controller.isCreatingFolder) {
-      const createForm = document.createElement("form");
-      createForm.className = ns.SIDEBAR_FOLDER_CLASSES.createForm;
-      createForm.addEventListener("submit", (event) => {
-        event.preventDefault();
-        controller.submitCreateFolder();
-      });
-
-      const input = document.createElement("input");
-      input.className = ns.SIDEBAR_FOLDER_CLASSES.createInput;
-      input.type = "text";
-      input.name = "folder-name";
-      input.placeholder = "Folder name";
-      input.value = controller.createDraft;
-      input.addEventListener("input", (event) => controller.updateCreateDraft(event.target.value));
-      input.addEventListener("keydown", (event) => {
-        if (event.key === "Escape") {
-          event.preventDefault();
-          controller.cancelCreateFolder();
-        }
-      });
-      createForm.appendChild(input);
-
-      const submit = document.createElement("button");
-      submit.type = "submit";
-      submit.className = ns.SIDEBAR_FOLDER_CLASSES.createSubmit;
-      submit.textContent = "Add";
-      createForm.appendChild(submit);
-
-      const cancel = document.createElement("button");
-      cancel.type = "button";
-      cancel.className = ns.SIDEBAR_FOLDER_CLASSES.createCancel;
-      cancel.textContent = "Cancel";
-      cancel.addEventListener("click", () => controller.cancelCreateFolder());
-      createForm.appendChild(cancel);
-
-      section.appendChild(createForm);
-      setTimeout(() => input.focus(), 0);
+    if (controller.isCreatingFolder && !controller.createParentFolderId) {
+      section.appendChild(ns.createFolderCreateForm(controller));
     } else {
       const createButton = document.createElement("button");
       createButton.type = "button";
@@ -586,206 +637,292 @@
     }
 
     const folderContainers = new Map();
-    for (const folder of state.folders || []) {
-      const block = document.createElement("div");
-      block.className = ns.SIDEBAR_FOLDER_CLASSES.folderBlock;
-
-      const row = document.createElement("div");
-      row.className = `group __menu-item hoverable ${ns.SIDEBAR_FOLDER_CLASSES.folderRow}`;
-      if (folder.expanded !== false) {
-        row.classList.add(ns.SIDEBAR_FOLDER_CLASSES.folderRowExpanded);
-      }
-      row.dataset.sidebarItem = "true";
-      row.dataset.folderId = folder.id;
-      row.dataset.cgcaDropKey = folder.id;
-      row.setAttribute("aria-expanded", folder.expanded === false ? "false" : "true");
-      ns.bindFolderDropTarget({
+    for (const rootFolder of tree.roots) {
+      ns.renderFolderNode({
         controller,
-        element: row,
-        folderId: folder.id,
-        targetKey: folder.id
+        state,
+        tree,
+        folder: rootFolder,
+        parentElement: section,
+        folderContainers
       });
-
-      const toggleButton = document.createElement("button");
-      toggleButton.type = "button";
-      toggleButton.className = ns.SIDEBAR_FOLDER_CLASSES.folderToggleButton;
-      toggleButton.setAttribute("aria-expanded", folder.expanded === false ? "false" : "true");
-      toggleButton.addEventListener("click", (event) =>
-        controller.toggleFolderExpanded(folder.id, event)
-      );
-
-      const rowBody = document.createElement("div");
-      rowBody.className = `flex min-w-0 grow items-center gap-1.5 ${ns.SIDEBAR_FOLDER_CLASSES.folderRowBody}`;
-      rowBody.appendChild(ns.createFolderToggleIcon(folder.expanded !== false));
-      rowBody.appendChild(ns.createMenuIcon(ns.createFolderGlyph()));
-      rowBody.appendChild(ns.createGrowLabel(folder.name));
-      toggleButton.appendChild(rowBody);
-      row.appendChild(toggleButton);
-
-      const trailingPair = document.createElement("div");
-      trailingPair.className = ns.SIDEBAR_FOLDER_CLASSES.folderTrailing;
-
-      const count = document.createElement("div");
-      count.className = ns.SIDEBAR_FOLDER_CLASSES.count;
-      count.textContent = String(ns.countAssignedChats(state, folder.id));
-      trailingPair.appendChild(count);
-
-      const menuWrap = document.createElement("div");
-      menuWrap.className = ns.SIDEBAR_FOLDER_CLASSES.menuWrap;
-      const menuButton = document.createElement("button");
-      menuButton.type = "button";
-      menuButton.className = ns.SIDEBAR_FOLDER_CLASSES.menuButton;
-      menuButton.setAttribute("aria-label", `Folder options for ${folder.name}`);
-      menuButton.setAttribute(
-        "aria-expanded",
-        controller.openMenuFolderId === folder.id ? "true" : "false"
-      );
-      menuButton.addEventListener("click", (event) => controller.toggleFolderMenu(folder.id, event));
-      menuButton.appendChild(ns.createMoreGlyph());
-      menuWrap.appendChild(menuButton);
-      trailingPair.appendChild(menuWrap);
-      row.appendChild(trailingPair);
-
-      block.appendChild(row);
-
-      if (controller.openMenuFolderId === folder.id) {
-        const menuPanel = document.createElement("div");
-        menuPanel.className = ns.SIDEBAR_FOLDER_CLASSES.menuPanel;
-
-        if (controller.renamingFolderId === folder.id) {
-          const renameForm = document.createElement("form");
-          renameForm.className = ns.SIDEBAR_FOLDER_CLASSES.renameForm;
-          renameForm.addEventListener("submit", (event) => {
-            event.preventDefault();
-            controller.submitRenameFolder(folder.id);
-          });
-
-          const renameInput = document.createElement("input");
-          renameInput.className = ns.SIDEBAR_FOLDER_CLASSES.renameInput;
-          renameInput.type = "text";
-          renameInput.name = "rename-folder";
-          renameInput.value = controller.renameDraft;
-          renameInput.placeholder = "Folder name";
-          renameInput.addEventListener("input", (event) =>
-            controller.updateRenameDraft(event.target.value)
-          );
-          renameInput.addEventListener("keydown", (event) => {
-            if (event.key === "Escape") {
-              event.preventDefault();
-              controller.cancelRenameFolder();
-            }
-          });
-          renameForm.appendChild(renameInput);
-
-          const renameActions = document.createElement("div");
-          renameActions.className = [
-            ns.SIDEBAR_FOLDER_CLASSES.menuActions,
-            ns.SIDEBAR_FOLDER_CLASSES.menuActionsInline
-          ].join(" ");
-
-          const renameSubmit = document.createElement("button");
-          renameSubmit.type = "submit";
-          renameSubmit.className = ns.SIDEBAR_FOLDER_CLASSES.menuAction;
-          renameSubmit.textContent = "Save";
-          renameActions.appendChild(renameSubmit);
-
-          const renameCancel = document.createElement("button");
-          renameCancel.type = "button";
-          renameCancel.className = ns.SIDEBAR_FOLDER_CLASSES.menuAction;
-          renameCancel.textContent = "Cancel";
-          renameCancel.addEventListener("click", () => controller.cancelRenameFolder());
-          renameActions.appendChild(renameCancel);
-
-          renameForm.appendChild(renameActions);
-
-          menuPanel.appendChild(renameForm);
-          setTimeout(() => renameInput.focus(), 0);
-        } else if (controller.pendingDeleteFolderId === folder.id) {
-          const notice = document.createElement("div");
-          notice.className = ns.SIDEBAR_FOLDER_CLASSES.menuNotice;
-          notice.textContent = `Delete "${folder.name}"? Chats will return to Your chats.`;
-          menuPanel.appendChild(notice);
-
-          const actions = document.createElement("div");
-          actions.className = [
-            ns.SIDEBAR_FOLDER_CLASSES.menuActions,
-            ns.SIDEBAR_FOLDER_CLASSES.menuActionsInline
-          ].join(" ");
-
-          const confirmDelete = document.createElement("button");
-          confirmDelete.type = "button";
-          confirmDelete.className = [
-            ns.SIDEBAR_FOLDER_CLASSES.menuAction,
-            ns.SIDEBAR_FOLDER_CLASSES.menuActionDanger
-          ].join(" ");
-          confirmDelete.textContent = "Delete";
-          confirmDelete.addEventListener("click", () => controller.submitDeleteFolder(folder.id));
-          actions.appendChild(confirmDelete);
-
-          const cancelDelete = document.createElement("button");
-          cancelDelete.type = "button";
-          cancelDelete.className = ns.SIDEBAR_FOLDER_CLASSES.menuAction;
-          cancelDelete.textContent = "Cancel";
-          cancelDelete.addEventListener("click", () => controller.cancelDeleteFolder());
-          actions.appendChild(cancelDelete);
-
-          menuPanel.appendChild(actions);
-        } else {
-          const actions = document.createElement("div");
-          actions.className = ns.SIDEBAR_FOLDER_CLASSES.menuActions;
-
-          const renameAction = document.createElement("button");
-          renameAction.type = "button";
-          renameAction.className = ns.SIDEBAR_FOLDER_CLASSES.menuAction;
-          renameAction.textContent = "Rename";
-          renameAction.addEventListener("click", (event) =>
-            controller.beginRenameFolder(folder.id, event)
-          );
-          actions.appendChild(renameAction);
-
-          const deleteAction = document.createElement("button");
-          deleteAction.type = "button";
-          deleteAction.className = [
-            ns.SIDEBAR_FOLDER_CLASSES.menuAction,
-            ns.SIDEBAR_FOLDER_CLASSES.menuActionDanger
-          ].join(" ");
-          deleteAction.textContent = "Delete";
-          deleteAction.addEventListener("click", (event) =>
-            controller.requestDeleteFolder(folder.id, event)
-          );
-          actions.appendChild(deleteAction);
-
-          menuPanel.appendChild(actions);
-        }
-
-        menuWrap.appendChild(menuPanel);
-      }
-
-      const children = document.createElement("div");
-      children.className = ns.SIDEBAR_FOLDER_CLASSES.folderChildren;
-      children.dataset.folderId = folder.id;
-      children.dataset.cgcaDropKey = `${folder.id}:children`;
-      if (folder.expanded === false) {
-        children.hidden = true;
-      }
-      ns.bindFolderDropTarget({
-        controller,
-        element: children,
-        folderId: folder.id,
-        targetKey: `${folder.id}:children`
-      });
-
-      const emptyState = document.createElement("div");
-      emptyState.className = ns.SIDEBAR_FOLDER_CLASSES.emptyState;
-      emptyState.textContent = "Drop chats here";
-      children.appendChild(emptyState);
-      block.appendChild(children);
-
-      section.appendChild(block);
-      folderContainers.set(folder.id, children);
     }
 
     return folderContainers;
+  };
+
+  ns.createFolderCreateForm = function createFolderCreateForm(controller) {
+    const createForm = document.createElement("form");
+    createForm.className = ns.SIDEBAR_FOLDER_CLASSES.createForm;
+    createForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      controller.submitCreateFolder();
+    });
+
+    const input = document.createElement("input");
+    input.className = ns.SIDEBAR_FOLDER_CLASSES.createInput;
+    input.type = "text";
+    input.name = "folder-name";
+    input.placeholder = "Folder name";
+    input.value = controller.createDraft;
+    input.addEventListener("input", (event) => controller.updateCreateDraft(event.target.value));
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        controller.cancelCreateFolder();
+      }
+    });
+    createForm.appendChild(input);
+
+    const submit = document.createElement("button");
+    submit.type = "submit";
+    submit.className = ns.SIDEBAR_FOLDER_CLASSES.createSubmit;
+    submit.textContent = "Add";
+    createForm.appendChild(submit);
+
+    const cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.className = ns.SIDEBAR_FOLDER_CLASSES.createCancel;
+    cancel.textContent = "Cancel";
+    cancel.addEventListener("click", () => controller.cancelCreateFolder());
+    createForm.appendChild(cancel);
+
+    setTimeout(() => input.focus(), 0);
+    return createForm;
+  };
+
+  ns.renderFolderNode = function renderFolderNode({
+    controller,
+    state,
+    tree,
+    folder,
+    parentElement,
+    folderContainers
+  }) {
+    const block = document.createElement("div");
+    block.className = ns.SIDEBAR_FOLDER_CLASSES.folderBlock;
+    block.dataset.folderId = folder.id;
+
+    const row = document.createElement("div");
+    row.className = `group __menu-item hoverable ${ns.SIDEBAR_FOLDER_CLASSES.folderRow}`;
+    if (folder.expanded !== false) {
+      row.classList.add(ns.SIDEBAR_FOLDER_CLASSES.folderRowExpanded);
+    }
+    row.dataset.sidebarItem = "true";
+    row.dataset.folderId = folder.id;
+    row.dataset.cgcaDropKey = folder.id;
+    row.setAttribute("aria-expanded", folder.expanded === false ? "false" : "true");
+    row.draggable = true;
+    row.addEventListener("dragstart", (event) => controller.handleFolderDragStart(row, event));
+    row.addEventListener("dragend", () => controller.handleFolderDragEnd());
+    ns.bindFolderDropTarget({
+      controller,
+      element: row,
+      folderId: folder.id,
+      targetKey: folder.id
+    });
+
+    const toggleButton = document.createElement("button");
+    toggleButton.type = "button";
+    toggleButton.className = ns.SIDEBAR_FOLDER_CLASSES.folderToggleButton;
+    toggleButton.setAttribute("aria-expanded", folder.expanded === false ? "false" : "true");
+    toggleButton.addEventListener("click", (event) =>
+      controller.toggleFolderExpanded(folder.id, event)
+    );
+
+    const rowBody = document.createElement("div");
+    rowBody.className = `flex min-w-0 grow items-center gap-1.5 ${ns.SIDEBAR_FOLDER_CLASSES.folderRowBody}`;
+    rowBody.appendChild(ns.createFolderToggleIcon(folder.expanded !== false));
+    rowBody.appendChild(ns.createMenuIcon(ns.createFolderGlyph()));
+    rowBody.appendChild(ns.createGrowLabel(folder.name));
+    toggleButton.appendChild(rowBody);
+    row.appendChild(toggleButton);
+
+    const trailingPair = document.createElement("div");
+    trailingPair.className = ns.SIDEBAR_FOLDER_CLASSES.folderTrailing;
+
+    const count = document.createElement("div");
+    count.className = ns.SIDEBAR_FOLDER_CLASSES.count;
+    count.textContent = String(ns.countAssignedChats(state, tree, folder.id));
+    trailingPair.appendChild(count);
+
+    const menuWrap = document.createElement("div");
+    menuWrap.className = ns.SIDEBAR_FOLDER_CLASSES.menuWrap;
+    const menuButton = document.createElement("button");
+    menuButton.type = "button";
+    menuButton.className = ns.SIDEBAR_FOLDER_CLASSES.menuButton;
+    menuButton.setAttribute("aria-label", `Folder options for ${folder.name}`);
+    menuButton.setAttribute(
+      "aria-expanded",
+      controller.openMenuFolderId === folder.id ? "true" : "false"
+    );
+    menuButton.addEventListener("click", (event) => controller.toggleFolderMenu(folder.id, event));
+    menuButton.appendChild(ns.createMoreGlyph());
+    menuWrap.appendChild(menuButton);
+    trailingPair.appendChild(menuWrap);
+    row.appendChild(trailingPair);
+    block.appendChild(row);
+
+    if (controller.openMenuFolderId === folder.id) {
+      const menuPanel = document.createElement("div");
+      menuPanel.className = ns.SIDEBAR_FOLDER_CLASSES.menuPanel;
+
+      if (controller.renamingFolderId === folder.id) {
+        const renameForm = document.createElement("form");
+        renameForm.className = ns.SIDEBAR_FOLDER_CLASSES.renameForm;
+        renameForm.addEventListener("submit", (event) => {
+          event.preventDefault();
+          controller.submitRenameFolder(folder.id);
+        });
+
+        const renameInput = document.createElement("input");
+        renameInput.className = ns.SIDEBAR_FOLDER_CLASSES.renameInput;
+        renameInput.type = "text";
+        renameInput.name = "rename-folder";
+        renameInput.value = controller.renameDraft;
+        renameInput.placeholder = "Folder name";
+        renameInput.addEventListener("input", (event) =>
+          controller.updateRenameDraft(event.target.value)
+        );
+        renameInput.addEventListener("keydown", (event) => {
+          if (event.key === "Escape") {
+            event.preventDefault();
+            controller.cancelRenameFolder();
+          }
+        });
+        renameForm.appendChild(renameInput);
+
+        const renameActions = document.createElement("div");
+        renameActions.className = [
+          ns.SIDEBAR_FOLDER_CLASSES.menuActions,
+          ns.SIDEBAR_FOLDER_CLASSES.menuActionsInline
+        ].join(" ");
+
+        const renameSubmit = document.createElement("button");
+        renameSubmit.type = "submit";
+        renameSubmit.className = ns.SIDEBAR_FOLDER_CLASSES.menuAction;
+        renameSubmit.textContent = "Save";
+        renameActions.appendChild(renameSubmit);
+
+        const renameCancel = document.createElement("button");
+        renameCancel.type = "button";
+        renameCancel.className = ns.SIDEBAR_FOLDER_CLASSES.menuAction;
+        renameCancel.textContent = "Cancel";
+        renameCancel.addEventListener("click", () => controller.cancelRenameFolder());
+        renameActions.appendChild(renameCancel);
+
+        renameForm.appendChild(renameActions);
+        menuPanel.appendChild(renameForm);
+        setTimeout(() => renameInput.focus(), 0);
+      } else if (controller.pendingDeleteFolderId === folder.id) {
+        const notice = document.createElement("div");
+        notice.className = ns.SIDEBAR_FOLDER_CLASSES.menuNotice;
+        notice.textContent = `Delete "${folder.name}"? Child folders move up one level.`;
+        menuPanel.appendChild(notice);
+
+        const actions = document.createElement("div");
+        actions.className = [
+          ns.SIDEBAR_FOLDER_CLASSES.menuActions,
+          ns.SIDEBAR_FOLDER_CLASSES.menuActionsInline
+        ].join(" ");
+
+        const confirmDelete = document.createElement("button");
+        confirmDelete.type = "button";
+        confirmDelete.className = [
+          ns.SIDEBAR_FOLDER_CLASSES.menuAction,
+          ns.SIDEBAR_FOLDER_CLASSES.menuActionDanger
+        ].join(" ");
+        confirmDelete.textContent = "Delete";
+        confirmDelete.addEventListener("click", () => controller.submitDeleteFolder(folder.id));
+        actions.appendChild(confirmDelete);
+
+        const cancelDelete = document.createElement("button");
+        cancelDelete.type = "button";
+        cancelDelete.className = ns.SIDEBAR_FOLDER_CLASSES.menuAction;
+        cancelDelete.textContent = "Cancel";
+        cancelDelete.addEventListener("click", () => controller.cancelDeleteFolder());
+        actions.appendChild(cancelDelete);
+
+        menuPanel.appendChild(actions);
+      } else {
+        const actions = document.createElement("div");
+        actions.className = ns.SIDEBAR_FOLDER_CLASSES.menuActions;
+
+        const createAction = document.createElement("button");
+        createAction.type = "button";
+        createAction.className = ns.SIDEBAR_FOLDER_CLASSES.menuAction;
+        createAction.textContent = "New subfolder";
+        createAction.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          controller.beginCreateFolder(folder.id);
+        });
+        actions.appendChild(createAction);
+
+        const renameAction = document.createElement("button");
+        renameAction.type = "button";
+        renameAction.className = ns.SIDEBAR_FOLDER_CLASSES.menuAction;
+        renameAction.textContent = "Rename";
+        renameAction.addEventListener("click", (event) =>
+          controller.beginRenameFolder(folder.id, event)
+        );
+        actions.appendChild(renameAction);
+
+        const deleteAction = document.createElement("button");
+        deleteAction.type = "button";
+        deleteAction.className = [
+          ns.SIDEBAR_FOLDER_CLASSES.menuAction,
+          ns.SIDEBAR_FOLDER_CLASSES.menuActionDanger
+        ].join(" ");
+        deleteAction.textContent = "Delete";
+        deleteAction.addEventListener("click", (event) =>
+          controller.requestDeleteFolder(folder.id, event)
+        );
+        actions.appendChild(deleteAction);
+
+        menuPanel.appendChild(actions);
+      }
+
+      menuWrap.appendChild(menuPanel);
+    }
+
+    const children = document.createElement("div");
+    children.className = ns.SIDEBAR_FOLDER_CLASSES.folderChildren;
+    children.dataset.folderId = folder.id;
+    children.dataset.cgcaDropKey = `${folder.id}:children`;
+    if (folder.expanded === false) {
+      children.hidden = true;
+    }
+    ns.bindFolderDropTarget({
+      controller,
+      element: children,
+      folderId: folder.id,
+      targetKey: `${folder.id}:children`
+    });
+
+    if (controller.isCreatingFolder && controller.createParentFolderId === folder.id) {
+      children.appendChild(ns.createFolderCreateForm(controller));
+    }
+
+    for (const childFolder of tree.childrenById.get(folder.id) || []) {
+      ns.renderFolderNode({
+        controller,
+        state,
+        tree,
+        folder: childFolder,
+        parentElement: children,
+        folderContainers
+      });
+    }
+
+    const emptyState = document.createElement("div");
+    emptyState.className = ns.SIDEBAR_FOLDER_CLASSES.emptyState;
+    emptyState.textContent = "Drop chats here";
+    children.appendChild(emptyState);
+    block.appendChild(children);
+
+    parentElement.appendChild(block);
+    folderContainers.set(folder.id, children);
   };
 
   ns.decorateUnassignedSection = function decorateUnassignedSection({
@@ -806,11 +943,14 @@
     folderContainers,
     state
   }) {
-    const anchors = Array.from(nav.querySelectorAll('a[data-sidebar-item="true"][href*="/c/"]'));
+    const anchors = ns.collectVisibleNativeConversationAnchors(nav);
     const assignments = state?.assignments || {};
+    const conversationCatalog = state?.conversationCatalog || {};
+    const anchorsByConversationId = new Map();
+    const orderedConversationIds = [];
 
     for (const children of folderContainers.values()) {
-      const emptyState = children.querySelector(`.${ns.SIDEBAR_FOLDER_CLASSES.emptyState}`);
+      const emptyState = ns.getLocalFolderEmptyState(children);
       if (emptyState) {
         children.appendChild(emptyState);
       }
@@ -819,6 +959,27 @@
     for (const anchor of anchors) {
       const conversationId = ns.getConversationIdFromHref(anchor.getAttribute("href") || "");
       if (!conversationId) continue;
+
+      ns.prepareConversationAnchor(controller, anchor, conversationId);
+      anchorsByConversationId.set(conversationId, anchor);
+      orderedConversationIds.push(conversationId);
+    }
+
+    const cachedConversationIds = Object.values(conversationCatalog)
+      .filter((entry) => entry?.id && !anchorsByConversationId.has(entry.id))
+      .sort((left, right) => {
+        const rightTime = new Date(right?.lastSeenAt || 0).getTime();
+        const leftTime = new Date(left?.lastSeenAt || 0).getTime();
+        if (rightTime !== leftTime) return rightTime - leftTime;
+        return String(left?.title || "").localeCompare(String(right?.title || ""));
+      })
+      .map((entry) => entry.id);
+
+    for (const conversationId of [...orderedConversationIds, ...cachedConversationIds]) {
+      const anchor =
+        anchorsByConversationId.get(conversationId) ||
+        ns.createCachedConversationAnchor(controller, state, conversationId);
+      if (!anchor) continue;
 
       ns.prepareConversationAnchor(controller, anchor, conversationId);
 
@@ -830,13 +991,35 @@
     }
 
     for (const children of folderContainers.values()) {
-      const emptyState = children.querySelector(`.${ns.SIDEBAR_FOLDER_CLASSES.emptyState}`);
+      const emptyState = ns.getLocalFolderEmptyState(children);
       if (!emptyState) continue;
-      const hasChats = Array.from(children.children).some(
-        (child) => child !== emptyState && child.matches?.('a[href*="/c/"]')
-      );
-      emptyState.hidden = hasChats;
+      const hasVisibleContent = Array.from(children.children).some((child) => {
+        if (child === emptyState) return false;
+        if (child.matches?.('a[href*="/c/"]')) return true;
+        return child.matches?.(`.${ns.SIDEBAR_FOLDER_CLASSES.folderBlock}`);
+      });
+      emptyState.hidden = hasVisibleContent;
     }
+  };
+
+  ns.collectVisibleNativeConversationAnchors = function collectVisibleNativeConversationAnchors(root) {
+    return Array.from(root.querySelectorAll('a[data-sidebar-item="true"][href*="/c/"]')).filter(
+      (anchor) => anchor.dataset.cgcaCached !== "true"
+    );
+  };
+
+  ns.collectVisibleNativeConversationItems = function collectVisibleNativeConversationItems(root) {
+    return ns.collectVisibleNativeConversationAnchors(root)
+      .map((anchor) => {
+        const id = ns.getConversationIdFromHref(anchor.getAttribute("href") || "");
+        if (!id) return null;
+        return {
+          id,
+          title: ns.getConversationTitleFromAnchor(anchor) || "Untitled",
+          url: ns.getConversationAbsoluteUrl(anchor)
+        };
+      })
+      .filter(Boolean);
   };
 
   ns.prepareConversationAnchor = function prepareConversationAnchor(controller, anchor, conversationId) {
@@ -850,6 +1033,60 @@
     }
   };
 
+  ns.createCachedConversationAnchor = function createCachedConversationAnchor(
+    controller,
+    state,
+    conversationId
+  ) {
+    const entry = ns.getConversationCatalogEntry(state, conversationId);
+    if (!entry?.url) return null;
+
+    const anchor = document.createElement("a");
+    anchor.href = entry.url;
+    anchor.className = `group __menu-item hoverable gap-1.5 w-full ${ns.SIDEBAR_FOLDER_CLASSES.cachedConversation}`;
+    anchor.dataset.sidebarItem = "true";
+    anchor.dataset.cgcaCached = "true";
+    anchor.dataset.cgcaConversationId = conversationId;
+    anchor.title = entry.title || "Untitled";
+
+    const body = document.createElement("div");
+    body.className = "flex min-w-0 grow items-center gap-2.5";
+
+    const label = document.createElement("div");
+    label.className = `truncate ${ns.SIDEBAR_FOLDER_CLASSES.cachedConversationLabel}`;
+    label.textContent = entry.title || "Untitled";
+    body.appendChild(label);
+
+    anchor.appendChild(body);
+    ns.prepareConversationAnchor(controller, anchor, conversationId);
+    return anchor;
+  };
+
+  ns.getConversationCatalogEntry = function getConversationCatalogEntry(state, conversationId) {
+    const directEntry = state?.conversationCatalog?.[conversationId];
+    if (directEntry) {
+      return directEntry;
+    }
+
+    const assignment = state?.assignments?.[conversationId];
+    if (!assignment) {
+      return null;
+    }
+
+    return {
+      id: conversationId,
+      title: assignment.title || "Untitled",
+      url: assignment.url || `https://chatgpt.com/c/${conversationId}`
+    };
+  };
+
+  ns.getLocalFolderEmptyState = function getLocalFolderEmptyState(container) {
+    if (!container) return null;
+    return Array.from(container.children).find((child) =>
+      child.classList?.contains(ns.SIDEBAR_FOLDER_CLASSES.emptyState)
+    ) || null;
+  };
+
   ns.bindFolderDropTarget = function bindFolderDropTarget({ controller, element, folderId, targetKey }) {
     if (element.dataset.cgcaDropBound === "true") {
       return;
@@ -858,20 +1095,28 @@
     element.dataset.cgcaDropBound = "true";
     element.addEventListener("dragenter", (event) => {
       event.preventDefault();
+      event.stopPropagation();
       controller.setDragTarget(targetKey);
     });
     element.addEventListener("dragover", (event) => {
       event.preventDefault();
+      event.stopPropagation();
       controller.setDragTarget(targetKey);
     });
     element.addEventListener("dragleave", (event) => {
+      event.stopPropagation();
       if (event.currentTarget === event.target) {
         controller.setDragTarget("");
       }
     });
     element.addEventListener("drop", async (event) => {
       event.preventDefault();
+      event.stopPropagation();
       controller.setDragTarget(targetKey);
+      if (controller.dragFolderId) {
+        await controller.moveDraggedFolder(folderId);
+        return;
+      }
       await controller.assignDraggedConversation(folderId);
     });
   };
@@ -884,26 +1129,105 @@
     element.dataset.cgcaUnassignedBound = "true";
     element.addEventListener("dragenter", (event) => {
       event.preventDefault();
+      event.stopPropagation();
       controller.setDragTarget("unassigned");
     });
     element.addEventListener("dragover", (event) => {
       event.preventDefault();
+      event.stopPropagation();
       controller.setDragTarget("unassigned");
     });
     element.addEventListener("dragleave", (event) => {
+      event.stopPropagation();
       if (event.currentTarget === event.target) {
         controller.setDragTarget("");
       }
     });
     element.addEventListener("drop", async (event) => {
       event.preventDefault();
+      event.stopPropagation();
       await controller.clearDraggedConversationFolder();
     });
   };
 
-  ns.countAssignedChats = function countAssignedChats(state, folderId) {
-    return Object.values(state?.assignments || {}).filter(
-      (assignment) => assignment?.folderId === folderId
+  ns.normalizeParentFolderId = function normalizeParentFolderId(value) {
+    const normalized = String(value || "").trim();
+    return normalized || null;
+  };
+
+  ns.buildFolderTree = function buildFolderTree(folders) {
+    const folderById = new Map();
+    const childrenById = new Map();
+    const depthById = new Map();
+    const sortedFolders = [...(folders || [])].sort((left, right) => {
+      const leftParent = ns.normalizeParentFolderId(left?.parentFolderId) || "";
+      const rightParent = ns.normalizeParentFolderId(right?.parentFolderId) || "";
+      const parentDelta = leftParent.localeCompare(rightParent);
+      if (parentDelta !== 0) return parentDelta;
+      const orderDelta = (Number(left?.order) || 0) - (Number(right?.order) || 0);
+      if (orderDelta !== 0) return orderDelta;
+      return String(left?.name || "").localeCompare(String(right?.name || ""));
+    });
+
+    for (const folder of sortedFolders) {
+      if (!folder?.id) continue;
+      folderById.set(folder.id, folder);
+      childrenById.set(folder.id, []);
+    }
+
+    const roots = [];
+    for (const folder of sortedFolders) {
+      if (!folder?.id) continue;
+      const parentFolderId = ns.resolveRenderableParentFolderId(folderById, folder);
+      if (!parentFolderId) {
+        roots.push(folder);
+        depthById.set(folder.id, 0);
+        continue;
+      }
+      childrenById.get(parentFolderId)?.push(folder);
+      depthById.set(folder.id, (depthById.get(parentFolderId) || 0) + 1);
+    }
+
+    return {
+      roots,
+      folderById,
+      childrenById,
+      depthById
+    };
+  };
+
+  ns.resolveRenderableParentFolderId = function resolveRenderableParentFolderId(folderById, folder) {
+    const immediateParentId = ns.normalizeParentFolderId(folder?.parentFolderId);
+    if (!immediateParentId) return null;
+    if (!folderById.has(immediateParentId)) return null;
+
+    let cursorId = immediateParentId;
+    const seen = new Set([folder.id]);
+    while (cursorId) {
+      if (seen.has(cursorId)) {
+        return null;
+      }
+      seen.add(cursorId);
+      const current = folderById.get(cursorId);
+      cursorId = ns.normalizeParentFolderId(current?.parentFolderId);
+    }
+
+    return immediateParentId;
+  };
+
+  ns.collectDescendantFolderIds = function collectDescendantFolderIds(tree, folderId, acc = new Set()) {
+    for (const child of tree.childrenById.get(folderId) || []) {
+      if (acc.has(child.id)) continue;
+      acc.add(child.id);
+      ns.collectDescendantFolderIds(tree, child.id, acc);
+    }
+    return acc;
+  };
+
+  ns.countAssignedChats = function countAssignedChats(state, tree, folderId) {
+    const visibleFolderIds = new Set([folderId, ...ns.collectDescendantFolderIds(tree, folderId)]);
+    return Object.values(state?.assignments || {}).filter((assignment) =>
+      visibleFolderIds.has(assignment?.folderId)
     ).length;
   };
 
@@ -1179,6 +1503,14 @@
       }
       .${classes.folderChildren} > a {
         margin-top: 2px;
+      }
+      .${classes.cachedConversation} {
+        display: flex;
+        min-width: 0;
+        align-items: center;
+      }
+      .${classes.cachedConversationLabel} {
+        min-width: 0;
       }
       .${classes.emptyState} {
         padding: 0.25rem 1rem 0.5rem 2.25rem;
