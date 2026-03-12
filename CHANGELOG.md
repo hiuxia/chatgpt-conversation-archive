@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.0] - 2026-03-12
+
+### Added
+
+1. cache sidebar conversations for resilient folders
+2. add conversation toc previews
+
 ## [0.2.0] - 2026-03-12
 
 ### Added

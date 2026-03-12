@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ChatGPT Voyager",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Organize ChatGPT chats with sidebar folders and export conversations to Markdown.",
   "permissions": [
     "storage",
