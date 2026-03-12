@@ -7,7 +7,11 @@
     "test:content-dom": "node tests/sidebar-folders-dom-selftest.js",
     "test:folders": "node tests/folder-store-selftest.js",
     "test:markdown": "node tests/markdown-serializer-selftest.js",
-    "test:zip": "node tests/zip-archive-selftest.js"
+    "test:release": "node tests/release-lib-selftest.js",
+    "test:zip": "node tests/zip-archive-selftest.js",
+    "release:notes": "node scripts/release-notes.mjs",
+    "release:package": "node scripts/release-package.mjs",
+    "release:prepare": "node scripts/release-prepare.mjs"
   },
   "devDependencies": {
     "jsdom": "^28.1.0",

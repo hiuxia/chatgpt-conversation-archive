@@ -1,0 +1,49 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run release validation
+        run: |
+          npm run test:release
+          npm run test:content-dom
+          npm run test:folders
+          npm run test:markdown
+          npm run test:zip
+
+      - name: Build extension archive
+        run: npm run release:package -- ${{ github.ref_name }}
+
+      - name: Generate release notes
+        run: npm run release:notes -- ${{ github.ref_name }} --output release/release-notes.md
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: release/release-notes.md
+          files: |
+            release/*.zip
+            release/*.sha256

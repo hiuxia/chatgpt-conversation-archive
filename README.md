@@ -67,6 +67,59 @@
 
 - `v0.1.0`
 
+## Release 自动化
+
+现在可以用一套本地脚本 + GitHub Actions 自动生成 release。
+
+### 本地准备新版本
+
+```bash
+npm run release:prepare -- 0.2.0
+```
+
+默认会做这些事：
+
+1. 同步更新 `package.json`、`package-lock.json`、`extension/manifest.json`、`README.md` 的版本号
+2. 基于上一个 git tag 之后的提交，生成新的 `CHANGELOG` 条目
+3. 运行发布前校验：
+   - `npm run test:release`
+   - `npm run test:content-dom`
+   - `npm run test:folders`
+   - `npm run test:markdown`
+   - `npm run test:zip`
+4. 在本地 `release/` 目录生成：
+   - extension zip
+   - sha256
+   - release notes 预览
+
+如果你还想把 `CDP` 冒烟测试也并入准备流程，可以这样：
+
+```bash
+npm run release:prepare -- 0.2.0 --with-cdp
+```
+
+### 推送正式 release
+
+准备脚本跑完后，按提示提交并打 tag：
+
+```bash
+git add README.md CHANGELOG.md extension/manifest.json package.json package-lock.json
+git commit -m "release: prepare v0.2.0"
+git tag -a v0.2.0 -m "Release v0.2.0"
+git push origin main v0.2.0
+```
+
+### GitHub 自动发版
+
+仓库现在带有 [release.yml](/Users/wanghaonan/projects/chrome%20plugins/chatgpt-conversation-archive/.github/workflows/release.yml)：
+
+1. 监听 `v*` tag push
+2. 自动安装依赖
+3. 自动运行 release 校验测试
+4. 自动打包扩展 zip 和 sha256
+5. 自动从 `CHANGELOG.md` 生成 GitHub Release notes
+6. 自动创建 GitHub Release 并上传资产
+
 ## 调试（可选，chrome-devtools-mcp）
 
 如果你要做自动化调试或跑 `npm run test:cdp`，按下面步骤：
