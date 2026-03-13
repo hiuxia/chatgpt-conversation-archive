@@ -82,13 +82,13 @@ Notes:
 ### Preview long conversations with the right-side TOC
 
 1. Open any ChatGPT conversation page (`/c/<id>`)
-2. Click the right-side TOC button (`目录`)
+2. Click the right-side TOC button (`TOC`)
 3. Click a dot to preview the corresponding assistant answer
 4. Use the preview card to inspect:
    - the prefix of the preceding user prompt
    - a short excerpt of the answer
    - Markdown sections extracted from that answer
-5. Click the jump action (`跳到这里`) or a section title to jump
+5. Click the jump action (`Jump here`) or a section title to jump
 
 Notes:
 
@@ -96,7 +96,6 @@ Notes:
 - The TOC is collapsed by default
 - Long dot rails and long preview cards scroll independently
 - Only assistant Markdown headings are included; wrapper headings are filtered out
-- The current in-product TOC labels are shown in Chinese
 
 ### Export conversations
 

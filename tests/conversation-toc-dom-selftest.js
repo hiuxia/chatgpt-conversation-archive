@@ -123,6 +123,7 @@ async function run() {
 
   const pill = rail.querySelector(".cgca-conversation-toc-pill");
   assert(pill, "Conversation TOC should render a toggle pill.");
+  assert(pill.textContent === "TOC", "Conversation TOC pill should use the English label.");
   assert(
     rail.querySelectorAll(".cgca-conversation-toc-dot").length === 0,
     "TOC should start collapsed and hide jump dots until expanded."
@@ -155,6 +156,10 @@ async function run() {
   );
   const cardTitle = rail.querySelector(".cgca-conversation-toc-card-title");
   assert(cardTitle, "Expanded TOC should render a compact title card.");
+  assert(
+    rail.querySelector(".cgca-conversation-toc-card-eyebrow")?.textContent === "Current answer",
+    "TOC card eyebrow should use the English label."
+  );
   assert(
     cardTitle.textContent.startsWith("Question two about method"),
     "TOC title should be derived from the previous user message."
@@ -193,6 +198,10 @@ async function run() {
 
   const previewJumpButton = rail.querySelector(".cgca-conversation-toc-card-action-button");
   assert(previewJumpButton, "Preview card should render an explicit jump action.");
+  assert(
+    previewJumpButton.textContent === "Jump here",
+    "Preview jump action should use the English label."
+  );
   previewJumpButton.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
   assert(
     lastScrolledTarget?.getAttribute("data-testid") === "conversation-turn-2",

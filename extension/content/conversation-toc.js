@@ -419,7 +419,7 @@
     pill.type = "button";
     pill.className = classes.pill;
     pill.setAttribute("aria-expanded", controller.expanded ? "true" : "false");
-    pill.textContent = "目录";
+    pill.textContent = "TOC";
     pill.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
@@ -444,7 +444,7 @@
 
     const eyebrow = document.createElement("div");
     eyebrow.className = classes.cardEyebrow;
-    eyebrow.textContent = "当前回答";
+    eyebrow.textContent = "Current answer";
     card.appendChild(eyebrow);
 
     const title = document.createElement("div");
@@ -454,7 +454,12 @@
 
     const meta = document.createElement("div");
     meta.className = classes.cardMeta;
-    meta.textContent = activeModel.headings.length > 0 ? `${activeModel.headings.length} 个小节` : "无标题";
+    meta.textContent =
+      activeModel.headings.length > 0
+        ? `${activeModel.headings.length} ${
+            activeModel.headings.length === 1 ? "section" : "sections"
+          }`
+        : "No headings";
     card.appendChild(meta);
 
     if (activeModel.previewText) {
@@ -490,7 +495,7 @@
     } else {
       const empty = document.createElement("div");
       empty.className = classes.empty;
-      empty.textContent = "这段没有可跳转小节。";
+      empty.textContent = "No jump targets in this answer.";
       card.appendChild(empty);
     }
 
@@ -499,7 +504,7 @@
     const jumpButton = document.createElement("button");
     jumpButton.type = "button";
     jumpButton.className = classes.cardActionButton;
-    jumpButton.textContent = "跳到这里";
+    jumpButton.textContent = "Jump here";
     jumpButton.addEventListener("click", (event) => {
       event.preventDefault();
       activeModel.article.scrollIntoView({ behavior: "smooth", block: "start" });
