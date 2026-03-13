@@ -3,6 +3,7 @@ release/
 .DS_Store
 *.log
 doc/
+temp/
 PRIVACY.md
 SECURITY.md
 RELEASE_NOTES_*.md

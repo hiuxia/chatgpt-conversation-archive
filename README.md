@@ -100,8 +100,6 @@ Notes:
 - [extension/](./extension): Chrome extension source
 - [tests/](./tests): no-build self-tests
 - [scripts/](./scripts): release and packaging scripts
-- [doc/2026-03-10/](./doc/2026-03-10): active product and implementation docs
-- [release-automation.md](./doc/2026-03-10/release-automation.md): release automation guide
 
 ## Current Version
 
@@ -112,7 +110,7 @@ Notes:
 The project includes an automated release pipeline, but the full workflow is mostly maintainer-facing.
 
 - This README keeps only a short overview
-- For the full publishing flow, see [doc/2026-03-10/release-automation.md](./doc/2026-03-10/release-automation.md)
+- The publishing flow is handled by the local release scripts and GitHub Actions workflow
 
 ## Debugging (optional, chrome-devtools-mcp)
 

@@ -99,8 +99,6 @@
 - [extension/](./extension)：Chrome 扩展主体
 - [tests/](./tests)：无构建自测脚本
 - [scripts/](./scripts)：release 与打包脚本
-- [doc/2026-03-10/](./doc/2026-03-10)：当前有效的产品与实现文档
-- [release-automation.md](./doc/2026-03-10/release-automation.md)：发布自动化说明
 
 ## 当前版本
 
@@ -111,7 +109,7 @@
 项目已经带有自动化 release 流程，但完整步骤更偏向维护者文档。
 
 - 主页只保留概览
-- 详细发布流程见 [doc/2026-03-10/release-automation.md](./doc/2026-03-10/release-automation.md)
+- 具体发布流程由本地 release 脚本和 GitHub Actions workflow 负责
 
 ## 调试（可选，chrome-devtools-mcp）
 
