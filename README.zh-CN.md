@@ -139,11 +139,9 @@
 2. 运行 `npm install`
 3. 在 `chrome://extensions` 中加载 [extension/](./extension)
 4. 提交 PR 前至少运行：
-   - `npm run test:content-dom`
    - `npm run test:toc`
-   - `npm run test:folders`
-   - `npm run test:markdown`
-   - `npm run test:zip`
+   - `npm run test:release`
+   - 如果需要验证真实 ChatGPT 会话提取，再运行 `npm run test:cdp`
 5. 在 PR 中说明：
    - 改了什么
    - 为什么改

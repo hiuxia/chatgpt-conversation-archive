@@ -139,9 +139,7 @@ If you want to run `npm run test:cdp`, start a dedicated Chrome instance with re
 2. Install dependencies with `npm install`
 3. Load [extension/](./extension) in `chrome://extensions`
 4. Run the relevant checks before opening a PR:
-   - `npm run test:content-dom`
    - `npm run test:toc`
-   - `npm run test:folders`
-   - `npm run test:markdown`
-   - `npm run test:zip`
+   - `npm run test:release`
+   - `npm run test:cdp` when you need to validate live extraction against a signed-in ChatGPT session
 5. In your PR, explain what changed, why it changed, and how you verified it

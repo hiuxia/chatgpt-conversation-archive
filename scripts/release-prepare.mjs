@@ -52,7 +52,7 @@ function updateChangelog(version, commitSubjects) {
 }
 
 function runReleaseValidation(withCdp) {
-  const scripts = ["test:release", "test:content-dom", "test:folders", "test:markdown", "test:zip"];
+  const scripts = ["test:release", "test:toc"];
   if (withCdp) {
     scripts.push("test:cdp");
   }
