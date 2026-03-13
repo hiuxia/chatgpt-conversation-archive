@@ -11,6 +11,15 @@ Full project docs:
 2. Enable `Developer mode`
 3. Click `Load unpacked`
 4. Select this `extension/` directory
+5. Open `https://chatgpt.com` and sign in
+6. Refresh the page
+7. Confirm that `Folders` appears in the left sidebar
+
+## Quick Check
+
+1. Use the left sidebar to create a folder and drag a chat into it
+2. Open a conversation page and confirm the right-side TOC button appears
+3. Open the extension side panel when you want to export conversations
 
 ## Current Capabilities
 
