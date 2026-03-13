@@ -11,6 +11,7 @@ export const PROJECT_ROOT = path.resolve(__dirname, "..");
 export const PACKAGE_JSON_PATH = path.join(PROJECT_ROOT, "package.json");
 export const PACKAGE_LOCK_PATH = path.join(PROJECT_ROOT, "package-lock.json");
 export const README_PATH = path.join(PROJECT_ROOT, "README.md");
+export const README_EN_PATH = path.join(PROJECT_ROOT, "README.en.md");
 export const CHANGELOG_PATH = path.join(PROJECT_ROOT, "CHANGELOG.md");
 export const MANIFEST_PATH = path.join(PROJECT_ROOT, "extension", "manifest.json");
 export const EXTENSION_DIR = path.join(PROJECT_ROOT, "extension");
@@ -49,9 +50,9 @@ export function escapeRegExp(value) {
 }
 
 export function replaceReadmeVersion(text, version) {
-  const pattern = /(## 当前版本\s*\n\s*\n- `v)([^`]+)(`)/;
+  const pattern = /(## (?:当前版本|Current Version)\s*\n\s*\n- `v)([^`]+)(`)/;
   if (!pattern.test(text)) {
-    throw new Error("Could not find the current version section in README.md.");
+    throw new Error("Could not find the current version section in README.");
   }
   return text.replace(pattern, `$1${normalizeVersion(version)}$3`);
 }
@@ -245,6 +246,9 @@ export function updateVersionFiles(version) {
 
   const readme = readText(README_PATH);
   writeText(README_PATH, replaceReadmeVersion(readme, normalizedVersion));
+
+  const readmeEn = readText(README_EN_PATH);
+  writeText(README_EN_PATH, replaceReadmeVersion(readmeEn, normalizedVersion));
 }
 
 export function assertVersionConsistency(version) {

@@ -40,6 +40,12 @@ async function run() {
     "README version replacement should update the displayed version."
   );
 
+  const readmeEn = "## Current Version\n\n- `v0.1.0`\n";
+  assert(
+    lib.replaceReadmeVersion(readmeEn, "0.2.0").includes("`v0.2.0`"),
+    "English README version replacement should update the displayed version."
+  );
+
   const changelog = `# Changelog\n\n## [0.2.0] - 2026-03-12\n\n### Added\n\n1. Sidebar folders.\n\n## [0.1.0] - 2026-02-22\n`;
   const extracted = lib.extractChangelogSection(changelog, "0.2.0");
   assert(

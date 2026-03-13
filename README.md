@@ -1,89 +1,97 @@
+[简体中文](./README.md) | [English](./README.en.md)
+
 # ChatGPT Voyager
 
-`ChatGPT Voyager` 是一个面向 `chatgpt.com` 的 Chrome 扩展，支持两类核心能力：
+`ChatGPT Voyager` 是一个面向 `chatgpt.com` 的 Chrome 扩展，围绕三个高频需求工作：
 
-- 在 ChatGPT 左侧历史栏里创建本地文件夹，用拖拽整理对话
-- 在会话页右侧生成轻量目录，用点状导航快速预览和定位回答结构
-- 把当前对话或批量历史对话导出为 Markdown / ZIP
+- 在 ChatGPT 原生左侧栏里用多层文件夹整理历史对话
+- 在长对话页面右侧用点状目录做预览和定位
+- 把当前对话或批量历史导出为 Markdown / ZIP
 
-文件夹功能是扩展自己的本地组织层，不会修改 ChatGPT 服务端数据。
+这些能力都建立在扩展自己的本地组织层之上，不会修改 ChatGPT 服务端数据。
 
-## 主要功能
+## 当前能力
 
-- 左侧栏 `Folders` 区域
-- 一级文件夹创建、重命名、删除
-- 直接把对话拖进文件夹，或拖回 `Your chats`
-- 文件夹展开 / 收起
-- 文件夹状态本地持久化
-- 会话页右侧 `目录` 入口
-- 点状回答导航与回答预览
-- 回答内 Markdown 标题目录
-- 当前对话导出为 Markdown
-- 批量历史导出为 ZIP
+- 在 ChatGPT 左侧栏注入 `Folders` 区域
+- 支持多层文件夹
+- 支持在左栏内联创建、重命名、删除文件夹
+- 支持把对话拖进任意层级文件夹，或拖回 `Your chats`
+- 本地缓存已见过的会话标题与归属关系，降低对原生历史 DOM 的依赖
+- 在会话页右侧提供可收起的 `目录`
+- 用小圆点预览 assistant 回答，再决定是否跳转
+- 从 assistant Markdown 标题里提取回答内小节
+- 导出当前对话为 Markdown
+- 批量导出已选历史为 ZIP
+- 带有 release 自动化脚本和 GitHub Actions 发版流程
 
-## 安装（Chrome）
+## 安装
 
 1. 打开 `chrome://extensions`
 2. 打开右上角 `开发者模式`
 3. 点击 `加载已解压的扩展程序`
-4. 选择本项目里的 `extension/` 目录
-5. 打开 `https://chatgpt.com` 并登录账号
-6. 刷新 ChatGPT 页面，确认左侧栏出现 `Folders`
-7. 需要导出时，再打开插件侧边栏 `ChatGPT Voyager`
+4. 选择仓库里的 [extension/](./extension) 目录
+5. 打开 `https://chatgpt.com` 并登录
+6. 刷新页面，确认左侧栏出现 `Folders`
+7. 需要导出时，再打开扩展侧边栏 `ChatGPT Voyager`
 
-## 怎么用
+## 如何使用
 
-### 使用左侧文件夹整理对话
+### 1. 用左侧文件夹整理历史
 
 1. 在 ChatGPT 左侧栏找到 `Folders`
-2. 点击 `New folder`，直接在左栏内输入文件夹名
-3. 把历史对话拖进目标文件夹
-4. 点击文件夹行可展开 / 收起
-5. 点击右侧 `...` 可在左栏内完成 `Rename` 和 `Delete`
+2. 点击 `New folder` 创建顶层文件夹
+3. 点击文件夹右侧 `...` 可以：
+   - `Rename`
+   - `Delete`
+   - `New subfolder`
+4. 直接把历史对话拖进目标文件夹
+5. 也可以把一个文件夹拖进另一个文件夹，形成多层结构
 
 说明：
 
-- 当前只支持一级文件夹
-- 删除文件夹不会删除对话，只会把对话移回 `Your chats`
-- 文件夹关系保存在本地浏览器里
+- 文件夹是扩展的本地组织层，不会同步到 ChatGPT 账号
+- 删除父文件夹时，不会删除对话；子文件夹会提升到上一层
+- 已缓存过的会话，即使原生历史列表暂时没加载出来，也能在文件夹里继续显示
 
-### 导出当前对话（单条）
-
-1. 在 ChatGPT 打开一个具体对话页面（`/c/<id>`）
-2. 点击 `Export Current Conversation`
-3. 浏览器会下载一个 `.md` 文件
-
-### 批量导出（ZIP）
-
-1. 点击 `Load History Links` 加载历史会话
-2. 通过搜索、分页浏览，勾选想导出的会话
-3. 点击 `Export Selected (ZIP)`
-4. 浏览器会下载一个 `.zip`，里面每个会话对应一个 `.md`
-
-### 使用右侧目录浏览长对话
+### 2. 用右侧目录预览长对话
 
 1. 打开任意一个 ChatGPT 会话页（`/c/<id>`）
 2. 在正文右侧点击 `目录`
-3. 点击小圆点，先预览该条 assistant 回答
+3. 点击小圆点，先预览对应 assistant 回答
 4. 在预览卡片里查看：
-   - 对应用户问题的开头摘要
-   - 回答的简短预览
-   - 回答中的 Markdown 小节列表
-5. 点击 `跳到这里` 或具体小节标题，再滚动到目标位置
+   - 上一条用户输入的开头摘要
+   - 当前回答的简短预览
+   - 该回答里的 Markdown 小节
+5. 点击 `跳到这里` 或具体小节标题，再跳到目标位置
 
 说明：
 
-- 小圆点默认用于预览，不会立刻跳走
-- 目录标题取自上一条用户输入的开头摘要，并会自动截断
-- 目录只提取 assistant 回答中的 Markdown 标题，不会混入 `You said:` 这类壳层标题
-- 目录默认收起，长卡片和长圆点轨道都支持独立滚动
+- 小圆点默认是预览入口，不会直接把页面滚走
+- 目录默认收起
+- 长预览卡片和长圆点轨道都支持独立滚动
+- 目录只提取 assistant 回答里的 Markdown 标题，不会混入壳层标题
 
-## 小提示
+### 3. 导出当前对话
 
-1. `Folders`、右侧 `目录` 和导出能力是分开的，可以独立使用。
-2. `Select Page` 只会选中当前页。
-3. 你勾选的会话会在当前浏览器会话内保留（关闭侧边栏再打开还在）。
-4. 如果历史列表不全，先在 ChatGPT 左侧历史栏向下滚动，再点一次 `Load History Links`。
+1. 在 ChatGPT 打开一个具体对话页面（`/c/<id>`）
+2. 打开扩展侧边栏
+3. 点击 `Export Current Conversation`
+4. 浏览器会下载一个 `.md` 文件
+
+### 4. 批量导出历史
+
+1. 打开扩展侧边栏
+2. 点击 `Load History Links`
+3. 通过搜索、分页浏览并勾选要导出的会话
+4. 点击 `Export Selected (ZIP)`
+5. 浏览器会下载一个 `.zip`，其中每个会话对应一个 `.md`
+
+## 项目结构
+
+- [extension/](./extension)：Chrome 扩展主体
+- [tests/](./tests)：无构建自测脚本
+- [scripts/](./scripts)：release 与打包脚本
+- [doc/2026-03-10/](./doc/2026-03-10)：当前有效的产品与实现文档
 
 ## 当前版本
 
@@ -91,49 +99,46 @@
 
 ## Release 自动化
 
-现在可以用一套本地脚本 + GitHub Actions 自动生成 release。
-
 ### 本地准备新版本
 
 ```bash
-npm run release:prepare -- 0.2.0
+npm run release:prepare -- <version>
 ```
 
-默认会做这些事：
+默认会执行这些步骤：
 
-1. 同步更新 `package.json`、`package-lock.json`、`extension/manifest.json`、`README.md` 的版本号
-2. 基于上一个 git tag 之后的提交，生成新的 `CHANGELOG` 条目
+1. 更新 `package.json`、`package-lock.json`、`extension/manifest.json`、`README.md`、`README.en.md`
+2. 基于上一个 git tag 之后的提交生成新的 `CHANGELOG` 条目
 3. 运行发布前校验：
    - `npm run test:release`
    - `npm run test:content-dom`
+   - `npm run test:toc`
    - `npm run test:folders`
    - `npm run test:markdown`
    - `npm run test:zip`
-4. 在本地 `release/` 目录生成：
+4. 在本地 [release/](./release) 目录生成：
    - extension zip
    - sha256
    - release notes 预览
 
-如果你还想把 `CDP` 冒烟测试也并入准备流程，可以这样：
+如果你还想把 CDP 冒烟测试并入准备流程：
 
 ```bash
-npm run release:prepare -- 0.2.0 --with-cdp
+npm run release:prepare -- <version> --with-cdp
 ```
 
 ### 推送正式 release
 
-准备脚本跑完后，按提示提交并打 tag：
-
 ```bash
-git add README.md CHANGELOG.md extension/manifest.json package.json package-lock.json
-git commit -m "release: prepare v0.2.0"
-git tag -a v0.2.0 -m "Release v0.2.0"
-git push origin main v0.2.0
+git add README.md README.en.md CHANGELOG.md extension/manifest.json package.json package-lock.json
+git commit -m "release: prepare v<version>"
+git tag -a v<version> -m "Release v<version>"
+git push origin main v<version>
 ```
 
 ### GitHub 自动发版
 
-仓库现在带有 [release.yml](/Users/wanghaonan/projects/chrome%20plugins/chatgpt-conversation-archive/.github/workflows/release.yml)：
+仓库内置了 [.github/workflows/release.yml](./.github/workflows/release.yml)：
 
 1. 监听 `v*` tag push
 2. 自动安装依赖
@@ -144,9 +149,9 @@ git push origin main v0.2.0
 
 ## 调试（可选，chrome-devtools-mcp）
 
-如果你要做自动化调试或跑 `npm run test:cdp`，按下面步骤：
+如果你要做自动化调试或运行 `npm run test:cdp`：
 
-1. 启动专用 Chrome（9222 端口）：
+1. 启动专用 Chrome：
    ```bash
    mkdir -p /tmp/chrome-mcp-chatgpt
    open -na "Google Chrome" --args \
@@ -167,29 +172,24 @@ git push origin main v0.2.0
      --browser-url=http://127.0.0.1:9222
    codex mcp list
    ```
-5. 跑 CDP 测试：
+5. 运行：
    ```bash
    npm run test:cdp
    ```
 
-## 贡献上手
-
-欢迎提 Issue 或 PR，一般按下面流程即可：
+## 开发与贡献
 
 1. Fork 本仓库并 clone 到本地
-2. 安装依赖：
-   - `npm install`
-3. 本地加载扩展：
-   - 打开 `chrome://extensions`
-   - 开启开发者模式
-   - 加载 `extension/` 目录
-4. 修改后做基本验证：
+2. 安装依赖：`npm install`
+3. 在 `chrome://extensions` 中加载 [extension/](./extension)
+4. 修改后至少运行：
    - `npm run test:content-dom`
+   - `npm run test:toc`
    - `npm run test:folders`
    - `npm run test:markdown`
    - `npm run test:zip`
-   - `npm run test:cdp`（需要你本地开了 9222 调试端口并已登录 ChatGPT）
-5. 提交分支并发起 PR，说明：
+5. 如果需要，再补跑 `npm run test:cdp`
+6. 提交 PR 时说明：
    - 改了什么
    - 为什么改
    - 怎么验证的

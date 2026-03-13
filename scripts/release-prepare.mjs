@@ -94,7 +94,9 @@ function main() {
   console.log(`Generated asset: ${relZip}`);
   console.log(`Generated checksum: ${relSha}`);
   console.log("Next steps:");
-  console.log(`  git add README.md CHANGELOG.md extension/manifest.json package.json package-lock.json`);
+  console.log(
+    `  git add README.md README.en.md CHANGELOG.md extension/manifest.json package.json package-lock.json`
+  );
   console.log(`  git commit -m "release: prepare v${version}"`);
   console.log(`  git tag -a ${versionTag(version)} -m "Release ${versionTag(version)}"`);
   console.log(`  git push origin main ${versionTag(version)}`);
