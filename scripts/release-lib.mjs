@@ -11,7 +11,7 @@ export const PROJECT_ROOT = path.resolve(__dirname, "..");
 export const PACKAGE_JSON_PATH = path.join(PROJECT_ROOT, "package.json");
 export const PACKAGE_LOCK_PATH = path.join(PROJECT_ROOT, "package-lock.json");
 export const README_PATH = path.join(PROJECT_ROOT, "README.md");
-export const README_EN_PATH = path.join(PROJECT_ROOT, "README.en.md");
+export const README_ZH_PATH = path.join(PROJECT_ROOT, "README.zh-CN.md");
 export const CHANGELOG_PATH = path.join(PROJECT_ROOT, "CHANGELOG.md");
 export const MANIFEST_PATH = path.join(PROJECT_ROOT, "extension", "manifest.json");
 export const EXTENSION_DIR = path.join(PROJECT_ROOT, "extension");
@@ -247,8 +247,8 @@ export function updateVersionFiles(version) {
   const readme = readText(README_PATH);
   writeText(README_PATH, replaceReadmeVersion(readme, normalizedVersion));
 
-  const readmeEn = readText(README_EN_PATH);
-  writeText(README_EN_PATH, replaceReadmeVersion(readmeEn, normalizedVersion));
+  const readmeZh = readText(README_ZH_PATH);
+  writeText(README_ZH_PATH, replaceReadmeVersion(readmeZh, normalizedVersion));
 }
 
 export function assertVersionConsistency(version) {

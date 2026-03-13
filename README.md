@@ -1,178 +1,137 @@
-[简体中文](./README.md) | [English](./README.en.md)
+[English](./README.md) | [简体中文](./README.zh-CN.md)
 
 # ChatGPT Voyager
 
-`ChatGPT Voyager` 是一个面向 `chatgpt.com` 的 Chrome 扩展，围绕三个高频需求工作：
+`ChatGPT Voyager` is a Chrome extension for `chatgpt.com` built around three high-frequency workflows:
 
-- 在 ChatGPT 原生左侧栏里用多层文件夹整理历史对话
-- 在长对话页面右侧用点状目录做预览和定位
-- 把当前对话或批量历史导出为 Markdown / ZIP
+- Organize chat history with nested folders inside ChatGPT's native left sidebar
+- Preview and navigate long conversations with a dot-based table of contents on the right side
+- Export the current conversation or selected history items to Markdown / ZIP
 
-这些能力都建立在扩展自己的本地组织层之上，不会修改 ChatGPT 服务端数据。
+These features are implemented as a local extension layer and do not modify ChatGPT server-side data.
 
-## 当前能力
+## Current Capabilities
 
-### 左栏整理
+### Sidebar Organization
 
-- 在 ChatGPT 左侧栏加入 `Folders` 分组
-- 支持多层文件夹
-- 支持在左栏内联创建、重命名、删除文件夹
-- 支持把对话拖进任意层级文件夹，或拖回 `Your chats`
-- 本地缓存已见过的会话标题与归属关系，减轻对原生历史 DOM 的依赖
+- Add a `Folders` section to ChatGPT's native left sidebar
+- Support nested folders
+- Create, rename, and delete folders inline
+- Drag chats into any folder level, or drag them back to `Your chats`
+- Cache seen conversation metadata locally so folder rendering depends less on the native history DOM
 
-### 对话阅读
+### Conversation Reading
 
-- 在会话页右侧提供可收起的目录入口
-- 用小圆点预览助手回答，再决定是否跳转
-- 从助手回答中的 Markdown 标题里提取小节
+- Show a collapsible TOC entry on conversation pages
+- Preview assistant answers through dots before deciding to jump
+- Extract per-answer sections from assistant Markdown headings
 
-### 导出与发布
+### Export and Release
 
-- 导出当前对话为 Markdown
-- 批量导出已选历史为 ZIP
-- 提供发布自动化脚本和 GitHub Actions 发版流程
+- Export the current conversation to Markdown
+- Export selected history items to ZIP
+- Ship with release automation scripts and a GitHub Actions publishing flow
 
-## 安装
+## Install
 
-1. 打开 `chrome://extensions`
-2. 打开右上角 `开发者模式`
-3. 点击 `加载已解压的扩展程序`
-4. 选择仓库里的 [extension/](./extension) 目录
-5. 打开 `https://chatgpt.com` 并登录
-6. 刷新页面，确认左侧栏出现 `Folders`
-7. 需要导出时，再打开扩展侧边栏 `ChatGPT Voyager`
+1. Open `chrome://extensions`
+2. Enable `Developer mode`
+3. Click `Load unpacked`
+4. Select the [extension/](./extension) directory from this repository
+5. Open `https://chatgpt.com` and sign in
+6. Refresh the page and confirm that `Folders` appears in the left sidebar
+7. Open the `ChatGPT Voyager` side panel when you want to export conversations
 
-## 如何使用
+## Usage
 
-### 1. 用左侧文件夹整理历史
+### 1. Organize chats with sidebar folders
 
-1. 在 ChatGPT 左侧栏找到 `Folders`
-2. 点击 `New folder` 创建顶层文件夹
-3. 点击文件夹右侧 `...` 可以：
+1. Find `Folders` in the ChatGPT left sidebar
+2. Click `New folder` to create a top-level folder
+3. Use the `...` menu on a folder row to:
    - `Rename`
    - `Delete`
    - `New subfolder`
-4. 直接把历史对话拖进目标文件夹
-5. 也可以把一个文件夹拖进另一个文件夹，形成多层结构
+4. Drag conversation rows into the target folder
+5. Drag a folder into another folder to create a nested tree
 
-说明：
+Notes:
 
-- 文件夹是扩展的本地组织层，不会同步到 ChatGPT 账号
-- 删除父文件夹时，不会删除对话；子文件夹会提升到上一层
-- 已缓存过的会话，即使原生历史列表暂时没加载出来，也能在文件夹里继续显示
+- Folders are local to the extension and do not sync to your ChatGPT account
+- Deleting a parent folder does not delete conversations; child folders are promoted one level up
+- Previously cached conversations can still appear inside folders even when the native history list has not fully reloaded yet
 
-### 2. 用右侧目录预览长对话
+### 2. Preview long conversations with the right-side TOC
 
-1. 打开任意一个 ChatGPT 会话页（`/c/<id>`）
-2. 在正文右侧点击 `目录`
-3. 点击小圆点，先预览对应 assistant 回答
-4. 在预览卡片里查看：
-   - 上一条用户输入的开头摘要
-   - 当前回答的简短预览
-   - 该回答里的 Markdown 小节
-5. 点击 `跳到这里` 或具体小节标题，再跳到目标位置
+1. Open any ChatGPT conversation page (`/c/<id>`)
+2. Click the right-side TOC button (`目录`)
+3. Click a dot to preview the corresponding assistant answer
+4. Use the preview card to inspect:
+   - the prefix of the preceding user prompt
+   - a short excerpt of the answer
+   - Markdown sections extracted from that answer
+5. Click the jump action (`跳到这里`) or a section title to jump
 
-说明：
+Notes:
 
-- 小圆点默认是预览入口，不会直接把页面滚走
-- 目录默认收起
-- 长预览卡片和长圆点轨道都支持独立滚动
-- 目录只提取助手回答里的 Markdown 标题，不会混入壳层标题
+- Dots are preview-first and do not scroll immediately
+- The TOC is collapsed by default
+- Long dot rails and long preview cards scroll independently
+- Only assistant Markdown headings are included; wrapper headings are filtered out
+- The current in-product TOC labels are shown in Chinese
 
-### 3. 导出当前对话
+### 3. Export the current conversation
 
-1. 在 ChatGPT 打开一个具体对话页面（`/c/<id>`）
-2. 打开扩展侧边栏
-3. 点击 `Export Current Conversation`
-4. 浏览器会下载一个 `.md` 文件
+1. Open a concrete ChatGPT conversation page (`/c/<id>`)
+2. Open the extension side panel
+3. Click `Export Current Conversation`
+4. The browser downloads one `.md` file
 
-### 4. 批量导出历史
+### 4. Export selected history items in a ZIP
 
-1. 打开扩展侧边栏
-2. 点击 `Load History Links`
-3. 通过搜索、分页浏览并勾选要导出的会话
-4. 点击 `Export Selected (ZIP)`
-5. 浏览器会下载一个 `.zip`，其中每个会话对应一个 `.md`
+1. Open the extension side panel
+2. Click `Load History Links`
+3. Search, paginate, and select the conversations you want
+4. Click `Export Selected (ZIP)`
+5. The browser downloads one `.zip` containing one `.md` file per conversation
 
-## 项目结构
+## Repository Layout
 
-- [extension/](./extension)：Chrome 扩展主体
-- [tests/](./tests)：无构建自测脚本
-- [scripts/](./scripts)：release 与打包脚本
-- [doc/2026-03-10/](./doc/2026-03-10)：当前有效的产品与实现文档
+- [extension/](./extension): Chrome extension source
+- [tests/](./tests): no-build self-tests
+- [scripts/](./scripts): release and packaging scripts
+- [doc/2026-03-10/](./doc/2026-03-10): active product and implementation docs
+- [release-automation.md](./doc/2026-03-10/release-automation.md): release automation guide
 
-## 当前版本
+## Current Version
 
 - `v0.3.0`
 
-## Release 自动化
+## Release Automation
 
-### 本地准备新版本
+The project includes an automated release pipeline, but the full workflow is mostly maintainer-facing.
 
-```bash
-npm run release:prepare -- <version>
-```
+- This README keeps only a short overview
+- For the full publishing flow, see [doc/2026-03-10/release-automation.md](./doc/2026-03-10/release-automation.md)
 
-默认会执行这些步骤：
+## Debugging (optional, chrome-devtools-mcp)
 
-1. 更新 `package.json`、`package-lock.json`、`extension/manifest.json`、`README.md`、`README.en.md`
-2. 基于上一个 git tag 之后的提交生成新的 `CHANGELOG` 条目
-3. 运行发布前校验：
-   - `npm run test:release`
-   - `npm run test:content-dom`
-   - `npm run test:toc`
-   - `npm run test:folders`
-   - `npm run test:markdown`
-   - `npm run test:zip`
-4. 在本地 [release/](./release) 目录生成：
-   - extension zip
-   - sha256
-   - release notes 预览
+If you want automated debugging or to run `npm run test:cdp`:
 
-如果你还想把 CDP 冒烟测试并入准备流程：
-
-```bash
-npm run release:prepare -- <version> --with-cdp
-```
-
-### 推送正式 release
-
-```bash
-git add README.md README.en.md CHANGELOG.md extension/manifest.json package.json package-lock.json
-git commit -m "release: prepare v<version>"
-git tag -a v<version> -m "Release v<version>"
-git push origin main v<version>
-```
-
-### GitHub 自动发版
-
-仓库内置了 [.github/workflows/release.yml](./.github/workflows/release.yml)：
-
-1. 监听 `v*` tag push
-2. 自动安装依赖
-3. 自动运行 release 校验测试
-4. 自动打包扩展 zip 和 sha256
-5. 自动从 `CHANGELOG.md` 生成 GitHub Release notes
-6. 自动创建 GitHub Release 并上传资产
-
-## 调试（可选，chrome-devtools-mcp）
-
-如果你要做自动化调试或运行 `npm run test:cdp`：
-
-1. 启动专用 Chrome：
+1. Launch a dedicated Chrome instance:
    ```bash
    mkdir -p /tmp/chrome-mcp-chatgpt
    open -na "Google Chrome" --args \
      --remote-debugging-port=9222 \
      --user-data-dir=/tmp/chrome-mcp-chatgpt
    ```
-2. 在这个窗口登录 `https://chatgpt.com`
-3. 验证调试端口：
+2. Sign in to `https://chatgpt.com` in that window
+3. Verify the debugging endpoint:
    ```bash
    curl -s http://127.0.0.1:9222/json/version
    curl -s http://127.0.0.1:9222/json/list
    ```
-4. 连接 MCP：
+4. Reconnect MCP:
    ```bash
    codex mcp remove chrome-devtools
    codex mcp add chrome-devtools -- \
@@ -180,24 +139,24 @@ git push origin main v<version>
      --browser-url=http://127.0.0.1:9222
    codex mcp list
    ```
-5. 运行：
+5. Run:
    ```bash
    npm run test:cdp
    ```
 
-## 开发与贡献
+## Contributing
 
-1. Fork 本仓库并 clone 到本地
-2. 安装依赖：`npm install`
-3. 在 `chrome://extensions` 中加载 [extension/](./extension)
-4. 修改后至少运行：
+1. Fork and clone the repository
+2. Install dependencies: `npm install`
+3. Load [extension/](./extension) in `chrome://extensions`
+4. After changes, run at least:
    - `npm run test:content-dom`
    - `npm run test:toc`
    - `npm run test:folders`
    - `npm run test:markdown`
    - `npm run test:zip`
-5. 如果需要，再补跑 `npm run test:cdp`
-6. 提交 PR 时说明：
-   - 改了什么
-   - 为什么改
-   - 怎么验证的
+5. Run `npm run test:cdp` if needed
+6. In your PR, explain:
+   - what changed
+   - why it changed
+   - how you verified it

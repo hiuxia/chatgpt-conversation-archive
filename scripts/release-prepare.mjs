@@ -95,7 +95,7 @@ function main() {
   console.log(`Generated checksum: ${relSha}`);
   console.log("Next steps:");
   console.log(
-    `  git add README.md README.en.md CHANGELOG.md extension/manifest.json package.json package-lock.json`
+    `  git add README.md README.zh-CN.md CHANGELOG.md extension/manifest.json package.json package-lock.json`
   );
   console.log(`  git commit -m "release: prepare v${version}"`);
   console.log(`  git tag -a ${versionTag(version)} -m "Release ${versionTag(version)}"`);

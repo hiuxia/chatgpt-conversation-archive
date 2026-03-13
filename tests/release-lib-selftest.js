@@ -40,9 +40,9 @@ async function run() {
     "README version replacement should update the displayed version."
   );
 
-  const readmeEn = "## Current Version\n\n- `v0.1.0`\n";
+  const readmeEnglish = "## Current Version\n\n- `v0.1.0`\n";
   assert(
-    lib.replaceReadmeVersion(readmeEn, "0.2.0").includes("`v0.2.0`"),
+    lib.replaceReadmeVersion(readmeEnglish, "0.2.0").includes("`v0.2.0`"),
     "English README version replacement should update the displayed version."
   );
 
