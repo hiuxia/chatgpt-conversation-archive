@@ -12,14 +12,22 @@ These features are implemented as a local extension layer and do not modify Chat
 
 ## Current Capabilities
 
-- Inject a `Folders` section into the native ChatGPT sidebar
+### Sidebar Organization
+
+- Add a Folders section to ChatGPT's native left sidebar
 - Support nested folders
-- Create, rename, and delete folders inline in the sidebar
-- Drag chats into any folder level, or drag them back to `Your chats`
-- Cache seen conversation metadata locally so folder rendering is less dependent on the native history DOM
-- Show a collapsible `目录` entry on conversation pages
+- Create, rename, and delete folders inline
+- Drag chats into any folder level, or drag them back to Your chats
+- Cache seen conversation metadata locally so folder rendering depends less on the native history DOM
+
+### Conversation Reading
+
+- Show a collapsible TOC entry on conversation pages
 - Preview assistant answers through dots before deciding to jump
 - Extract per-answer sections from assistant Markdown headings
+
+### Export and Release
+
 - Export the current conversation to Markdown
 - Export selected history items to ZIP
 - Ship with release automation scripts and a GitHub Actions publishing flow
