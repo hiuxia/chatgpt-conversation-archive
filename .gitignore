@@ -2,6 +2,7 @@ node_modules/
 release/
 .DS_Store
 *.log
+tests/reports/
 doc/
 temp/
 PRIVACY.md
