@@ -2,35 +2,56 @@
 
 # ChatGPT Voyager
 
-`ChatGPT Voyager` is a Chrome extension for `chatgpt.com` built around three high-frequency workflows:
+Turn ChatGPT into an organized workspace.
 
-- Organize chat history with nested folders inside ChatGPT's native left sidebar
-- Preview and navigate long conversations with a dot-based table of contents on the right side
-- Export the current conversation or selected history items to Markdown / ZIP
+`ChatGPT Voyager` is a Chrome extension for `chatgpt.com` that helps you:
 
-These features are implemented as a local extension layer and do not modify ChatGPT server-side data.
+- organize chat history with nested folders in the native sidebar
+- preview long answers before jumping through a right-side TOC
+- export important conversations to Markdown or ZIP
 
-## Current Capabilities
+Local-first. No sync to ChatGPT servers. No modification to ChatGPT server-side data.
 
-### Sidebar Organization
+## Why People Use It
+
+### Organize long-running chat history
+
+ChatGPT's default history works for quick sessions, but it becomes messy once you are juggling research, coding, writing, and repeated follow-up threads. Voyager adds nested folders directly into the existing ChatGPT sidebar, so your history feels more like a workspace than a dump.
+
+### Read long answers faster
+
+Long assistant replies are useful, but hard to scan. Voyager adds a lightweight right-side TOC with preview-first dots, so you can inspect an answer before deciding to jump into it.
+
+### Keep useful work outside ChatGPT
+
+Some conversations are worth keeping. Voyager lets you export the current conversation as Markdown or batch-export selected chats into a ZIP, so your notes are easier to reuse elsewhere.
+
+## Best For
+
+- researchers working through long ChatGPT threads
+- developers using ChatGPT for debugging, planning, or code review
+- writers collecting reusable outlines and reference conversations
+- anyone whose ChatGPT sidebar already feels chaotic
+
+## What You Get
+
+### Sidebar organization
 
 - Add a `Folders` section to ChatGPT's native left sidebar
-- Support nested folders
-- Create, rename, and delete folders inline
-- Drag chats into any folder level, or drag them back to `Your chats`
-- Cache seen conversation metadata locally so folder rendering depends less on the native history DOM
+- Create nested folders inline
+- Drag chats into folders, or drag them back to `Your chats`
+- Keep folder state resilient with a local conversation cache
 
-### Conversation Reading
+### Conversation reading
 
 - Show a collapsible TOC entry on conversation pages
 - Preview assistant answers through dots before deciding to jump
 - Extract per-answer sections from assistant Markdown headings
 
-### Export and Release
+### Export
 
 - Export the current conversation to Markdown
 - Export selected history items to ZIP
-- Ship with release automation scripts and a GitHub Actions publishing flow
 
 ## Install
 
@@ -42,17 +63,14 @@ These features are implemented as a local extension layer and do not modify Chat
 6. Refresh the page and confirm that `Folders` appears in the left sidebar
 7. Open the `ChatGPT Voyager` side panel when you want to export conversations
 
-## Usage
+## How It Works
 
-### 1. Organize chats with sidebar folders
+### Organize chats with sidebar folders
 
 1. Find `Folders` in the ChatGPT left sidebar
 2. Click `New folder` to create a top-level folder
-3. Use the `...` menu on a folder row to:
-   - `Rename`
-   - `Delete`
-   - `New subfolder`
-4. Drag conversation rows into the target folder
+3. Use the `...` menu to rename, delete, or create a subfolder
+4. Drag conversations into folders
 5. Drag a folder into another folder to create a nested tree
 
 Notes:
@@ -61,7 +79,7 @@ Notes:
 - Deleting a parent folder does not delete conversations; child folders are promoted one level up
 - Previously cached conversations can still appear inside folders even when the native history list has not fully reloaded yet
 
-### 2. Preview long conversations with the right-side TOC
+### Preview long conversations with the right-side TOC
 
 1. Open any ChatGPT conversation page (`/c/<id>`)
 2. Click the right-side TOC button (`目录`)
@@ -80,20 +98,20 @@ Notes:
 - Only assistant Markdown headings are included; wrapper headings are filtered out
 - The current in-product TOC labels are shown in Chinese
 
-### 3. Export the current conversation
+### Export conversations
+
+Current conversation:
 
 1. Open a concrete ChatGPT conversation page (`/c/<id>`)
 2. Open the extension side panel
 3. Click `Export Current Conversation`
-4. The browser downloads one `.md` file
 
-### 4. Export selected history items in a ZIP
+Batch export:
 
 1. Open the extension side panel
 2. Click `Load History Links`
 3. Search, paginate, and select the conversations you want
 4. Click `Export Selected (ZIP)`
-5. The browser downloads one `.zip` containing one `.md` file per conversation
 
 ## Repository Layout
 
@@ -107,54 +125,24 @@ Notes:
 
 ## Release Automation
 
-The project includes an automated release pipeline, but the full workflow is mostly maintainer-facing.
+The project includes an automated release pipeline, but the detailed flow is maintainer-facing.
 
-- This README keeps only a short overview
-- The publishing flow is handled by the local release scripts and GitHub Actions workflow
+- Local release scripts keep versions and changelog entries in sync
+- GitHub Actions publishes tagged releases automatically
 
-## Debugging (optional, chrome-devtools-mcp)
+## Debugging
 
-If you want automated debugging or to run `npm run test:cdp`:
-
-1. Launch a dedicated Chrome instance:
-   ```bash
-   mkdir -p /tmp/chrome-mcp-chatgpt
-   open -na "Google Chrome" --args \
-     --remote-debugging-port=9222 \
-     --user-data-dir=/tmp/chrome-mcp-chatgpt
-   ```
-2. Sign in to `https://chatgpt.com` in that window
-3. Verify the debugging endpoint:
-   ```bash
-   curl -s http://127.0.0.1:9222/json/version
-   curl -s http://127.0.0.1:9222/json/list
-   ```
-4. Reconnect MCP:
-   ```bash
-   codex mcp remove chrome-devtools
-   codex mcp add chrome-devtools -- \
-     npx -y chrome-devtools-mcp@latest \
-     --browser-url=http://127.0.0.1:9222
-   codex mcp list
-   ```
-5. Run:
-   ```bash
-   npm run test:cdp
-   ```
+If you want to run `npm run test:cdp`, start a dedicated Chrome instance with remote debugging enabled and sign in to `chatgpt.com` first. The full MCP-based debugging commands remain in the repository history if you need them for local automation.
 
 ## Contributing
 
 1. Fork and clone the repository
-2. Install dependencies: `npm install`
+2. Install dependencies with `npm install`
 3. Load [extension/](./extension) in `chrome://extensions`
-4. After changes, run at least:
+4. Run the relevant checks before opening a PR:
    - `npm run test:content-dom`
    - `npm run test:toc`
    - `npm run test:folders`
    - `npm run test:markdown`
    - `npm run test:zip`
-5. Run `npm run test:cdp` if needed
-6. In your PR, explain:
-   - what changed
-   - why it changed
-   - how you verified it
+5. In your PR, explain what changed, why it changed, and how you verified it
