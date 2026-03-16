@@ -23,6 +23,8 @@
       activeTurnId: "",
       previewTurnId: "",
       expanded: false,
+      lastRenderSnapshot: null,
+      lastObservedTurnsSnapshot: null,
       handleDocumentPointerDown: null,
       handleDocumentKeyDown: null,
 
@@ -103,6 +105,7 @@
 
         if (!ns.isConversationRoute()) {
           ns.removeConversationTocRail();
+          this.lastRenderSnapshot = null;
           this.disconnectVisibilityObserver();
           return;
         }
@@ -110,6 +113,7 @@
         const main = ns.queryConversationMain();
         if (!main) {
           ns.removeConversationTocRail();
+          this.lastRenderSnapshot = null;
           this.scheduleRender(500);
           return;
         }
@@ -117,6 +121,7 @@
         const turnModels = ns.collectConversationTocTurnModels(main);
         if (!turnModels.length) {
           ns.removeConversationTocRail();
+          this.lastRenderSnapshot = null;
           this.disconnectVisibilityObserver();
           return;
         }
@@ -127,13 +132,22 @@
           this.activeTurnId,
           turnModels
         );
-        const rail = ns.ensureConversationTocRail();
-        ns.renderConversationTocRail({
-          controller: this,
-          rail,
+        const nextRenderSnapshot = ns.buildConversationTocRenderSnapshot({
           turnModels,
-          activeTurnId: this.activeTurnId
+          activeTurnId: this.activeTurnId,
+          previewTurnId: this.previewTurnId,
+          expanded: this.expanded
         });
+        const rail = ns.ensureConversationTocRail();
+        if (!ns.areConversationTocRenderSnapshotsEqual(this.lastRenderSnapshot, nextRenderSnapshot)) {
+          ns.renderConversationTocRail({
+            controller: this,
+            rail,
+            turnModels,
+            activeTurnId: this.activeTurnId
+          });
+          this.lastRenderSnapshot = nextRenderSnapshot;
+        }
         this.observeTurnVisibility(turnModels);
       },
 
@@ -170,6 +184,17 @@
           return;
         }
 
+        const nextObservedTurnsSnapshot = ns.buildConversationTocObservedTurnsSnapshot(turnModels);
+        if (
+          this.intersectionObserver &&
+          ns.areConversationTocObservedTurnSnapshotsEqual(
+            this.lastObservedTurnsSnapshot,
+            nextObservedTurnsSnapshot
+          )
+        ) {
+          return;
+        }
+
         this.disconnectVisibilityObserver();
 
         this.intersectionObserver = new IntersectionObserver(
@@ -188,6 +213,7 @@
         for (const model of turnModels) {
           this.intersectionObserver.observe(model.article);
         }
+        this.lastObservedTurnsSnapshot = nextObservedTurnsSnapshot;
       },
 
       disconnectVisibilityObserver() {
@@ -195,6 +221,7 @@
           this.intersectionObserver.disconnect();
           this.intersectionObserver = null;
         }
+        this.lastObservedTurnsSnapshot = null;
       }
     };
   };
@@ -406,6 +433,165 @@
       : false;
   };
 
+  ns.buildConversationTocRenderSnapshot = function buildConversationTocRenderSnapshot({
+    turnModels,
+    activeTurnId,
+    previewTurnId,
+    expanded
+  }) {
+    return {
+      expanded: expanded === true,
+      activeTurnId: String(activeTurnId || ""),
+      previewTurnId: String(previewTurnId || ""),
+      turns: (turnModels || []).map((model) => ({
+        turnId: String(model?.turnId || ""),
+        label: String(model?.label || ""),
+        previewText: String(model?.previewText || ""),
+        article: model?.article || null,
+        headings: (model?.headings || []).map((heading) => ({
+          id: String(heading?.id || ""),
+          level: Number(heading?.level) || 0,
+          text: String(heading?.text || ""),
+          element: heading?.element || null
+        }))
+      }))
+    };
+  };
+
+  ns.areConversationTocRenderSnapshotsEqual = function areConversationTocRenderSnapshotsEqual(
+    previousSnapshot,
+    nextSnapshot
+  ) {
+    if (!previousSnapshot || !nextSnapshot) {
+      return false;
+    }
+    if (previousSnapshot.expanded !== nextSnapshot.expanded) {
+      return false;
+    }
+    if (previousSnapshot.activeTurnId !== nextSnapshot.activeTurnId) {
+      return false;
+    }
+    if (previousSnapshot.previewTurnId !== nextSnapshot.previewTurnId) {
+      return false;
+    }
+    if (previousSnapshot.turns.length !== nextSnapshot.turns.length) {
+      return false;
+    }
+
+    for (let index = 0; index < nextSnapshot.turns.length; index += 1) {
+      const previousTurn = previousSnapshot.turns[index];
+      const nextTurn = nextSnapshot.turns[index];
+      if (!previousTurn || !nextTurn) {
+        return false;
+      }
+      if (previousTurn.turnId !== nextTurn.turnId) {
+        return false;
+      }
+      if (previousTurn.label !== nextTurn.label) {
+        return false;
+      }
+      if (previousTurn.previewText !== nextTurn.previewText) {
+        return false;
+      }
+      if (previousTurn.article !== nextTurn.article) {
+        return false;
+      }
+      if (previousTurn.headings.length !== nextTurn.headings.length) {
+        return false;
+      }
+
+      for (let headingIndex = 0; headingIndex < nextTurn.headings.length; headingIndex += 1) {
+        const previousHeading = previousTurn.headings[headingIndex];
+        const nextHeading = nextTurn.headings[headingIndex];
+        if (!previousHeading || !nextHeading) {
+          return false;
+        }
+        if (previousHeading.id !== nextHeading.id) {
+          return false;
+        }
+        if (previousHeading.level !== nextHeading.level) {
+          return false;
+        }
+        if (previousHeading.text !== nextHeading.text) {
+          return false;
+        }
+        if (previousHeading.element !== nextHeading.element) {
+          return false;
+        }
+      }
+    }
+
+    return true;
+  };
+
+  ns.buildConversationTocObservedTurnsSnapshot = function buildConversationTocObservedTurnsSnapshot(
+    turnModels
+  ) {
+    return (turnModels || []).map((model) => ({
+      turnId: String(model?.turnId || ""),
+      article: model?.article || null
+    }));
+  };
+
+  ns.areConversationTocObservedTurnSnapshotsEqual =
+    function areConversationTocObservedTurnSnapshotsEqual(previousSnapshot, nextSnapshot) {
+      if (!previousSnapshot || !nextSnapshot) {
+        return false;
+      }
+      if (previousSnapshot.length !== nextSnapshot.length) {
+        return false;
+      }
+
+      for (let index = 0; index < nextSnapshot.length; index += 1) {
+        const previousTurn = previousSnapshot[index];
+        const nextTurn = nextSnapshot[index];
+        if (!previousTurn || !nextTurn) {
+          return false;
+        }
+        if (previousTurn.turnId !== nextTurn.turnId) {
+          return false;
+        }
+        if (previousTurn.article !== nextTurn.article) {
+          return false;
+        }
+      }
+
+      return true;
+    };
+
+  ns.captureConversationTocScrollState = function captureConversationTocScrollState(rail) {
+    const classes = ns.CONVERSATION_TOC_CLASSES;
+    const surface = rail?.querySelector(`.${classes.surface}`);
+    const card = rail?.querySelector(`.${classes.card}`);
+    const dotsViewport = rail?.querySelector(`.${classes.dotsViewport}`);
+
+    return {
+      displayedTurnId: String(surface?.dataset?.displayedTurnId || "").trim(),
+      cardScrollTop: Number(card?.scrollTop || 0),
+      dotsScrollTop: Number(dotsViewport?.scrollTop || 0)
+    };
+  };
+
+  ns.restoreConversationTocScrollState = function restoreConversationTocScrollState({
+    displayedTurnId,
+    preservedState,
+    card,
+    dotsViewport
+  }) {
+    if (!preservedState || preservedState.displayedTurnId !== displayedTurnId) {
+      return false;
+    }
+
+    if (card && Number.isFinite(preservedState.cardScrollTop)) {
+      card.scrollTop = preservedState.cardScrollTop;
+    }
+    if (dotsViewport && Number.isFinite(preservedState.dotsScrollTop)) {
+      dotsViewport.scrollTop = preservedState.dotsScrollTop;
+    }
+
+    return true;
+  };
+
   ns.renderConversationTocRail = function renderConversationTocRail({
     controller,
     rail,
@@ -413,6 +599,7 @@
     activeTurnId
   }) {
     const classes = ns.CONVERSATION_TOC_CLASSES;
+    const preservedScrollState = ns.captureConversationTocScrollState(rail);
     rail.textContent = "";
 
     const pill = document.createElement("button");
@@ -437,6 +624,7 @@
 
     const displayedTurnId = controller.previewTurnId || activeTurnId;
     const activeModel = turnModels.find((model) => model.turnId === displayedTurnId) || turnModels[0];
+    surface.dataset.displayedTurnId = activeModel.turnId;
 
     const card = document.createElement("div");
     card.className = classes.card;
@@ -545,8 +733,14 @@
       dots.appendChild(dot);
     }
 
+    const restoredScrollState = ns.restoreConversationTocScrollState({
+      displayedTurnId: activeModel.turnId,
+      preservedState: preservedScrollState,
+      card,
+      dotsViewport
+    });
     const activeDot = dots.querySelector(`.${classes.dot}.${classes.dotActive}`);
-    if (activeDot && typeof activeDot.scrollIntoView === "function") {
+    if (!restoredScrollState && activeDot && typeof activeDot.scrollIntoView === "function") {
       activeDot.scrollIntoView({ block: "nearest", inline: "nearest" });
     }
   };

@@ -213,6 +213,38 @@ async function run() {
   previewOutlineItems[0].dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
   assert(lastScrolledTarget?.tagName === "H3", "Clicking a preview outline item should scroll to its heading.");
 
+  const scrollableCardBeforeRefresh = rail.querySelector(".cgca-conversation-toc-card");
+  const scrollableDotsBeforeRefresh = rail.querySelector(".cgca-conversation-toc-dots-viewport");
+  const observerCountBeforeRefresh = IntersectionObserverStub.instances.length;
+  scrollableCardBeforeRefresh.scrollTop = 84;
+  scrollableDotsBeforeRefresh.scrollTop = 28;
+
+  controller.scheduleRender(0);
+  await wait(0);
+
+  const scrollableCardAfterRefresh = rail.querySelector(".cgca-conversation-toc-card");
+  const scrollableDotsAfterRefresh = rail.querySelector(".cgca-conversation-toc-dots-viewport");
+  assert(
+    scrollableCardAfterRefresh === scrollableCardBeforeRefresh,
+    "TOC should reuse the existing card DOM when nothing meaningful changed."
+  );
+  assert(
+    scrollableDotsAfterRefresh === scrollableDotsBeforeRefresh,
+    "TOC should reuse the existing dots viewport when nothing meaningful changed."
+  );
+  assert(
+    scrollableCardAfterRefresh.scrollTop === 84,
+    "TOC card scroll position should survive rerenders for the same previewed answer."
+  );
+  assert(
+    scrollableDotsAfterRefresh.scrollTop === 28,
+    "TOC dots viewport scroll position should survive rerenders for the same previewed answer."
+  );
+  assert(
+    IntersectionObserverStub.instances.length === observerCountBeforeRefresh,
+    "No-op TOC renders should not recreate the visibility observer."
+  );
+
   const observer = IntersectionObserverStub.instances[0];
   const laterArticle = dom.window.document.querySelector('[data-testid="conversation-turn-5"]');
   observer.callback([
