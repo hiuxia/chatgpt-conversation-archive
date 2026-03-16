@@ -34,8 +34,12 @@
       renamingFolderId: "",
       renameDraft: "",
       pendingDeleteFolderId: "",
+      menuButtonElements: new Map(),
+      floatingMenuLayer: null,
       handleDocumentPointerDown: null,
       handleDocumentKeyDown: null,
+      handleDocumentScroll: null,
+      handleWindowResize: null,
 
       start() {
         if (this.started) return;
@@ -65,6 +69,22 @@
             }
           };
           document.addEventListener("keydown", this.handleDocumentKeyDown, true);
+        }
+
+        if (!this.handleDocumentScroll) {
+          this.handleDocumentScroll = () => {
+            if (!this.openMenuFolderId) return;
+            this.positionFloatingMenu();
+          };
+          document.addEventListener("scroll", this.handleDocumentScroll, true);
+        }
+
+        if (!this.handleWindowResize) {
+          this.handleWindowResize = () => {
+            if (!this.openMenuFolderId) return;
+            this.positionFloatingMenu();
+          };
+          window.addEventListener("resize", this.handleWindowResize);
         }
       },
 
@@ -141,12 +161,15 @@
 
         this.isRendering = true;
         this.ignoreObservedMutations = true;
+        this.menuButtonElements = new Map();
+        ns.destroyFloatingFolderMenu(this);
         if (this.observerResumeTimer) {
           clearTimeout(this.observerResumeTimer);
           this.observerResumeTimer = null;
         }
         try {
           const foldersSection = ns.ensureFoldersSection(nav, yourChatsSection);
+          const tree = ns.buildFolderTree(this.state?.folders || []);
           ns.restoreManagedSidebarChats({
             section: foldersSection,
             historyContainer
@@ -154,7 +177,8 @@
           const folderContainers = ns.renderFoldersSection({
             controller: this,
             state: this.state,
-            section: foldersSection
+            section: foldersSection,
+            tree
           });
           ns.removeManagedCachedSidebarChats(nav);
           ns.decorateUnassignedSection({
@@ -168,6 +192,11 @@
             historyContainer,
             folderContainers,
             state: this.state
+          });
+          ns.renderFloatingFolderMenu({
+            controller: this,
+            state: this.state,
+            tree
           });
           void this.syncVisibleConversationCatalog(nav);
         } finally {
@@ -326,6 +355,7 @@
         if (!this.openMenuFolderId && !this.renamingFolderId && !this.pendingDeleteFolderId) {
           return;
         }
+        ns.destroyFloatingFolderMenu(this);
         this.openMenuFolderId = "";
         this.renamingFolderId = "";
         this.renameDraft = "";
@@ -547,6 +577,63 @@
         this.dragConversationId = "";
         this.setDragTarget("");
         this.scheduleRender(0);
+      },
+
+      registerMenuButton(folderId, button) {
+        const normalizedId = String(folderId || "").trim();
+        if (!normalizedId || !button) return;
+        this.menuButtonElements.set(normalizedId, button);
+      },
+
+      getMenuButton(folderId) {
+        const normalizedId = String(folderId || "").trim();
+        if (!normalizedId) return null;
+
+        const directMatch = this.menuButtonElements.get(normalizedId);
+        if (directMatch && document.contains(directMatch)) {
+          return directMatch;
+        }
+
+        return document.querySelector(
+          `.${ns.SIDEBAR_FOLDER_CLASSES.menuButton}[data-folder-id="${CSS.escape(normalizedId)}"]`
+        );
+      },
+
+      positionFloatingMenu() {
+        const panel = this.floatingMenuLayer?.querySelector(`.${ns.SIDEBAR_FOLDER_CLASSES.menuPanel}`);
+        const anchor = this.getMenuButton(this.openMenuFolderId);
+        if (!panel || !anchor) {
+          return;
+        }
+
+        const viewportPadding = 8;
+        const gap = 6;
+        panel.style.left = "0px";
+        panel.style.top = "0px";
+
+        const anchorRect = anchor.getBoundingClientRect();
+        const panelRect = panel.getBoundingClientRect();
+
+        let top = anchorRect.bottom + gap;
+        if (top + panelRect.height > window.innerHeight - viewportPadding) {
+          top = anchorRect.top - panelRect.height - gap;
+        }
+        top = Math.max(
+          viewportPadding,
+          Math.min(top, window.innerHeight - panelRect.height - viewportPadding)
+        );
+
+        let left = anchorRect.right - panelRect.width;
+        if (left < viewportPadding) {
+          left = anchorRect.left;
+        }
+        left = Math.max(
+          viewportPadding,
+          Math.min(left, window.innerWidth - panelRect.width - viewportPadding)
+        );
+
+        panel.style.left = `${Math.round(left)}px`;
+        panel.style.top = `${Math.round(top)}px`;
       }
     };
   };
@@ -601,9 +688,8 @@
     }
   };
 
-  ns.renderFoldersSection = function renderFoldersSection({ controller, state, section }) {
+  ns.renderFoldersSection = function renderFoldersSection({ controller, state, section, tree }) {
     section.textContent = "";
-    const tree = ns.buildFolderTree(state?.folders || []);
 
     const headerButton = document.createElement("button");
     headerButton.type = "button";
@@ -751,6 +837,7 @@
     const menuButton = document.createElement("button");
     menuButton.type = "button";
     menuButton.className = ns.SIDEBAR_FOLDER_CLASSES.menuButton;
+    menuButton.dataset.folderId = folder.id;
     menuButton.setAttribute("aria-label", `Folder options for ${folder.name}`);
     menuButton.setAttribute(
       "aria-expanded",
@@ -758,133 +845,11 @@
     );
     menuButton.addEventListener("click", (event) => controller.toggleFolderMenu(folder.id, event));
     menuButton.appendChild(ns.createMoreGlyph());
+    controller.registerMenuButton(folder.id, menuButton);
     menuWrap.appendChild(menuButton);
     trailingPair.appendChild(menuWrap);
     row.appendChild(trailingPair);
     block.appendChild(row);
-
-    if (controller.openMenuFolderId === folder.id) {
-      const menuPanel = document.createElement("div");
-      menuPanel.className = ns.SIDEBAR_FOLDER_CLASSES.menuPanel;
-
-      if (controller.renamingFolderId === folder.id) {
-        const renameForm = document.createElement("form");
-        renameForm.className = ns.SIDEBAR_FOLDER_CLASSES.renameForm;
-        renameForm.addEventListener("submit", (event) => {
-          event.preventDefault();
-          controller.submitRenameFolder(folder.id);
-        });
-
-        const renameInput = document.createElement("input");
-        renameInput.className = ns.SIDEBAR_FOLDER_CLASSES.renameInput;
-        renameInput.type = "text";
-        renameInput.name = "rename-folder";
-        renameInput.value = controller.renameDraft;
-        renameInput.placeholder = "Folder name";
-        renameInput.addEventListener("input", (event) =>
-          controller.updateRenameDraft(event.target.value)
-        );
-        renameInput.addEventListener("keydown", (event) => {
-          if (event.key === "Escape") {
-            event.preventDefault();
-            controller.cancelRenameFolder();
-          }
-        });
-        renameForm.appendChild(renameInput);
-
-        const renameActions = document.createElement("div");
-        renameActions.className = [
-          ns.SIDEBAR_FOLDER_CLASSES.menuActions,
-          ns.SIDEBAR_FOLDER_CLASSES.menuActionsInline
-        ].join(" ");
-
-        const renameSubmit = document.createElement("button");
-        renameSubmit.type = "submit";
-        renameSubmit.className = ns.SIDEBAR_FOLDER_CLASSES.menuAction;
-        renameSubmit.textContent = "Save";
-        renameActions.appendChild(renameSubmit);
-
-        const renameCancel = document.createElement("button");
-        renameCancel.type = "button";
-        renameCancel.className = ns.SIDEBAR_FOLDER_CLASSES.menuAction;
-        renameCancel.textContent = "Cancel";
-        renameCancel.addEventListener("click", () => controller.cancelRenameFolder());
-        renameActions.appendChild(renameCancel);
-
-        renameForm.appendChild(renameActions);
-        menuPanel.appendChild(renameForm);
-        setTimeout(() => renameInput.focus(), 0);
-      } else if (controller.pendingDeleteFolderId === folder.id) {
-        const notice = document.createElement("div");
-        notice.className = ns.SIDEBAR_FOLDER_CLASSES.menuNotice;
-        notice.textContent = `Delete "${folder.name}"? Child folders move up one level.`;
-        menuPanel.appendChild(notice);
-
-        const actions = document.createElement("div");
-        actions.className = [
-          ns.SIDEBAR_FOLDER_CLASSES.menuActions,
-          ns.SIDEBAR_FOLDER_CLASSES.menuActionsInline
-        ].join(" ");
-
-        const confirmDelete = document.createElement("button");
-        confirmDelete.type = "button";
-        confirmDelete.className = [
-          ns.SIDEBAR_FOLDER_CLASSES.menuAction,
-          ns.SIDEBAR_FOLDER_CLASSES.menuActionDanger
-        ].join(" ");
-        confirmDelete.textContent = "Delete";
-        confirmDelete.addEventListener("click", () => controller.submitDeleteFolder(folder.id));
-        actions.appendChild(confirmDelete);
-
-        const cancelDelete = document.createElement("button");
-        cancelDelete.type = "button";
-        cancelDelete.className = ns.SIDEBAR_FOLDER_CLASSES.menuAction;
-        cancelDelete.textContent = "Cancel";
-        cancelDelete.addEventListener("click", () => controller.cancelDeleteFolder());
-        actions.appendChild(cancelDelete);
-
-        menuPanel.appendChild(actions);
-      } else {
-        const actions = document.createElement("div");
-        actions.className = ns.SIDEBAR_FOLDER_CLASSES.menuActions;
-
-        const createAction = document.createElement("button");
-        createAction.type = "button";
-        createAction.className = ns.SIDEBAR_FOLDER_CLASSES.menuAction;
-        createAction.textContent = "New subfolder";
-        createAction.addEventListener("click", (event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          controller.beginCreateFolder(folder.id);
-        });
-        actions.appendChild(createAction);
-
-        const renameAction = document.createElement("button");
-        renameAction.type = "button";
-        renameAction.className = ns.SIDEBAR_FOLDER_CLASSES.menuAction;
-        renameAction.textContent = "Rename";
-        renameAction.addEventListener("click", (event) =>
-          controller.beginRenameFolder(folder.id, event)
-        );
-        actions.appendChild(renameAction);
-
-        const deleteAction = document.createElement("button");
-        deleteAction.type = "button";
-        deleteAction.className = [
-          ns.SIDEBAR_FOLDER_CLASSES.menuAction,
-          ns.SIDEBAR_FOLDER_CLASSES.menuActionDanger
-        ].join(" ");
-        deleteAction.textContent = "Delete";
-        deleteAction.addEventListener("click", (event) =>
-          controller.requestDeleteFolder(folder.id, event)
-        );
-        actions.appendChild(deleteAction);
-
-        menuPanel.appendChild(actions);
-      }
-
-      menuWrap.appendChild(menuPanel);
-    }
 
     const children = document.createElement("div");
     children.className = ns.SIDEBAR_FOLDER_CLASSES.folderChildren;
@@ -1231,6 +1196,178 @@
     ).length;
   };
 
+  ns.getDeleteFolderNoticeText = function getDeleteFolderNoticeText(folderName, tree, folderId) {
+    const descendantCount = ns.collectDescendantFolderIds(tree, folderId).size;
+    if (!descendantCount) {
+      return `Delete "${folderName}"? Chats in this folder will return to Your chats.`;
+    }
+
+    const subfolderLabel =
+      descendantCount === 1
+        ? "1 subfolder will be deleted"
+        : `${descendantCount} subfolders will be deleted`;
+    return `Delete "${folderName}"? ${subfolderLabel}, and chats in this tree will return to Your chats.`;
+  };
+
+  ns.createFolderMenuPanel = function createFolderMenuPanel({ controller, folder, tree }) {
+    const menuPanel = document.createElement("div");
+    menuPanel.className = ns.SIDEBAR_FOLDER_CLASSES.menuPanel;
+
+    if (controller.renamingFolderId === folder.id) {
+      const renameForm = document.createElement("form");
+      renameForm.className = ns.SIDEBAR_FOLDER_CLASSES.renameForm;
+      renameForm.addEventListener("submit", (event) => {
+        event.preventDefault();
+        controller.submitRenameFolder(folder.id);
+      });
+
+      const renameInput = document.createElement("input");
+      renameInput.className = ns.SIDEBAR_FOLDER_CLASSES.renameInput;
+      renameInput.type = "text";
+      renameInput.name = "rename-folder";
+      renameInput.value = controller.renameDraft;
+      renameInput.placeholder = "Folder name";
+      renameInput.addEventListener("input", (event) =>
+        controller.updateRenameDraft(event.target.value)
+      );
+      renameInput.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          controller.cancelRenameFolder();
+        }
+      });
+      renameForm.appendChild(renameInput);
+
+      const renameActions = document.createElement("div");
+      renameActions.className = [
+        ns.SIDEBAR_FOLDER_CLASSES.menuActions,
+        ns.SIDEBAR_FOLDER_CLASSES.menuActionsInline
+      ].join(" ");
+
+      const renameSubmit = document.createElement("button");
+      renameSubmit.type = "submit";
+      renameSubmit.className = ns.SIDEBAR_FOLDER_CLASSES.menuAction;
+      renameSubmit.textContent = "Save";
+      renameActions.appendChild(renameSubmit);
+
+      const renameCancel = document.createElement("button");
+      renameCancel.type = "button";
+      renameCancel.className = ns.SIDEBAR_FOLDER_CLASSES.menuAction;
+      renameCancel.textContent = "Cancel";
+      renameCancel.addEventListener("click", () => controller.cancelRenameFolder());
+      renameActions.appendChild(renameCancel);
+
+      renameForm.appendChild(renameActions);
+      menuPanel.appendChild(renameForm);
+      setTimeout(() => renameInput.focus(), 0);
+      return menuPanel;
+    }
+
+    if (controller.pendingDeleteFolderId === folder.id) {
+      const notice = document.createElement("div");
+      notice.className = ns.SIDEBAR_FOLDER_CLASSES.menuNotice;
+      notice.textContent = ns.getDeleteFolderNoticeText(folder.name, tree, folder.id);
+      menuPanel.appendChild(notice);
+
+      const actions = document.createElement("div");
+      actions.className = [
+        ns.SIDEBAR_FOLDER_CLASSES.menuActions,
+        ns.SIDEBAR_FOLDER_CLASSES.menuActionsInline
+      ].join(" ");
+
+      const confirmDelete = document.createElement("button");
+      confirmDelete.type = "button";
+      confirmDelete.className = [
+        ns.SIDEBAR_FOLDER_CLASSES.menuAction,
+        ns.SIDEBAR_FOLDER_CLASSES.menuActionDanger
+      ].join(" ");
+      confirmDelete.textContent = "Delete";
+      confirmDelete.addEventListener("click", () => controller.submitDeleteFolder(folder.id));
+      actions.appendChild(confirmDelete);
+
+      const cancelDelete = document.createElement("button");
+      cancelDelete.type = "button";
+      cancelDelete.className = ns.SIDEBAR_FOLDER_CLASSES.menuAction;
+      cancelDelete.textContent = "Cancel";
+      cancelDelete.addEventListener("click", () => controller.cancelDeleteFolder());
+      actions.appendChild(cancelDelete);
+
+      menuPanel.appendChild(actions);
+      return menuPanel;
+    }
+
+    const actions = document.createElement("div");
+    actions.className = ns.SIDEBAR_FOLDER_CLASSES.menuActions;
+
+    const createAction = document.createElement("button");
+    createAction.type = "button";
+    createAction.className = ns.SIDEBAR_FOLDER_CLASSES.menuAction;
+    createAction.textContent = "New subfolder";
+    createAction.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      controller.beginCreateFolder(folder.id);
+    });
+    actions.appendChild(createAction);
+
+    const renameAction = document.createElement("button");
+    renameAction.type = "button";
+    renameAction.className = ns.SIDEBAR_FOLDER_CLASSES.menuAction;
+    renameAction.textContent = "Rename";
+    renameAction.addEventListener("click", (event) =>
+      controller.beginRenameFolder(folder.id, event)
+    );
+    actions.appendChild(renameAction);
+
+    const deleteAction = document.createElement("button");
+    deleteAction.type = "button";
+    deleteAction.className = [
+      ns.SIDEBAR_FOLDER_CLASSES.menuAction,
+      ns.SIDEBAR_FOLDER_CLASSES.menuActionDanger
+    ].join(" ");
+    deleteAction.textContent = "Delete";
+    deleteAction.addEventListener("click", (event) =>
+      controller.requestDeleteFolder(folder.id, event)
+    );
+    actions.appendChild(deleteAction);
+
+    menuPanel.appendChild(actions);
+    return menuPanel;
+  };
+
+  ns.renderFloatingFolderMenu = function renderFloatingFolderMenu({ controller, state, tree }) {
+    ns.destroyFloatingFolderMenu(controller);
+
+    const folderId = String(controller?.openMenuFolderId || "").trim();
+    if (!folderId) {
+      return;
+    }
+
+    const folder = (state?.folders || []).find((item) => item.id === folderId);
+    const anchor = controller.getMenuButton(folderId);
+    if (!folder || !anchor) {
+      return;
+    }
+
+    const layer = document.createElement("div");
+    layer.className = ns.SIDEBAR_FOLDER_CLASSES.menuPortal;
+    const menuPanel = ns.createFolderMenuPanel({ controller, folder, tree });
+    layer.appendChild(menuPanel);
+    document.body.appendChild(layer);
+    controller.floatingMenuLayer = layer;
+    controller.positionFloatingMenu();
+  };
+
+  ns.destroyFloatingFolderMenu = function destroyFloatingFolderMenu(controller) {
+    const existingLayer = controller?.floatingMenuLayer;
+    if (!existingLayer) {
+      return;
+    }
+
+    existingLayer.remove();
+    controller.floatingMenuLayer = null;
+  };
+
   ns.createSectionChevron = function createSectionChevron(isExpanded) {
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     svg.setAttribute("xmlns", "http://www.w3.org/2000/svg");
@@ -1424,16 +1561,27 @@
         align-items: center;
         justify-content: center;
       }
+      .${classes.menuPortal} {
+        position: fixed;
+        inset: 0;
+        z-index: 2147483647;
+        pointer-events: none;
+      }
       .${classes.menuPanel} {
-        position: absolute;
-        top: calc(100% + 0.35rem);
-        right: 0;
-        z-index: 12;
-        min-width: 10.5rem;
+        position: fixed;
+        width: min(15rem, calc(100vw - 1rem));
+        min-width: min(12rem, calc(100vw - 1rem));
+        max-width: calc(100vw - 1rem);
+        max-height: min(18rem, calc(100vh - 1rem));
+        box-sizing: border-box;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        pointer-events: auto;
         padding: 0.35rem;
         border: 1px solid rgba(0, 0, 0, 0.06);
         border-radius: 0.9rem;
         background: var(--bg-elevated-secondary, rgba(255, 255, 255, 0.9));
+        white-space: normal;
         box-shadow:
           0 10px 28px rgba(15, 23, 42, 0.08),
           0 2px 8px rgba(15, 23, 42, 0.04);
@@ -1454,6 +1602,7 @@
         border-radius: 0.75rem;
         color: inherit;
         font: inherit;
+        white-space: normal;
       }
       .${classes.menuAction} {
         display: flex;
@@ -1497,6 +1646,8 @@
         color: var(--text-tertiary, #6b7280);
         font-size: 12px;
         line-height: 1.4;
+        white-space: normal;
+        overflow-wrap: anywhere;
       }
       .${classes.folderChildren} {
         padding-left: 1.75rem;

@@ -76,7 +76,7 @@ Some conversations are worth keeping. Voyager lets you export the current conver
 Notes:
 
 - Folders are local to the extension and do not sync to your ChatGPT account
-- Deleting a parent folder does not delete conversations; child folders are promoted one level up
+- Deleting a folder removes its subfolders from the local tree; chats in that subtree return to `Your chats`
 - Previously cached conversations can still appear inside folders even when the native history list has not fully reloaded yet
 
 ### Preview long conversations with the right-side TOC

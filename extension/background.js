@@ -780,33 +780,20 @@ async function moveSidebarFolder(folderId, parentFolderId) {
 }
 
 async function deleteSidebarFolder(folderId) {
-  if (!folderId) {
+  const normalizedId = String(folderId || "").trim();
+  if (!normalizedId) {
     return { ok: false, error: "Folder id is required." };
   }
 
   const state = await mutateSidebarFolderState((draft) => {
-    const deletedFolder = draft.folders.find((item) => item.id === folderId);
-    if (!deletedFolder) {
+    const deletedFolderIds = collectSidebarFolderTreeIds(draft.folders, normalizedId);
+    if (!deletedFolderIds.size) {
       throw new Error("Folder not found.");
     }
 
-    const nextFolders = draft.folders.filter((item) => item.id !== folderId);
-    if (nextFolders.length === draft.folders.length) {
-      throw new Error("Folder not found.");
-    }
-
-    draft.folders = nextFolders.map((item) =>
-      item.parentFolderId === folderId
-        ? {
-            ...item,
-            parentFolderId: deletedFolder.parentFolderId,
-            order: getNextSiblingOrder(nextFolders.filter((folder) => folder.id !== item.id), deletedFolder.parentFolderId),
-            updatedAt: new Date().toISOString()
-          }
-        : item
-    );
+    draft.folders = draft.folders.filter((item) => !deletedFolderIds.has(item.id));
     for (const [conversationId, assignment] of Object.entries(draft.assignments)) {
-      if (assignment?.folderId === folderId) {
+      if (deletedFolderIds.has(assignment?.folderId)) {
         delete draft.assignments[conversationId];
       }
     }
@@ -1199,6 +1186,45 @@ function getNextSiblingOrder(folders, parentFolderId) {
       .filter((folder) => normalizeParentFolderId(folder.parentFolderId) === normalizedParentId)
       .reduce((max, folder) => Math.max(max, Number(folder.order) || 0), -1) + 1
   );
+}
+
+function collectSidebarFolderTreeIds(folders, rootFolderId) {
+  const normalizedRootId = String(rootFolderId || "").trim();
+  if (!normalizedRootId) {
+    return new Set();
+  }
+
+  const folderIds = new Set(
+    (folders || [])
+      .map((folder) => String(folder?.id || "").trim())
+      .filter(Boolean)
+  );
+  if (!folderIds.has(normalizedRootId)) {
+    return new Set();
+  }
+
+  const collectedIds = new Set();
+  const queue = [normalizedRootId];
+  while (queue.length) {
+    const currentId = queue.shift();
+    if (!currentId || collectedIds.has(currentId)) {
+      continue;
+    }
+
+    collectedIds.add(currentId);
+    for (const folder of folders || []) {
+      if (normalizeParentFolderId(folder?.parentFolderId) !== currentId) {
+        continue;
+      }
+
+      const childId = String(folder?.id || "").trim();
+      if (childId && !collectedIds.has(childId)) {
+        queue.push(childId);
+      }
+    }
+  }
+
+  return collectedIds;
 }
 
 function wouldCreateFolderCycle(folders, folderId, nextParentFolderId) {

@@ -63,6 +63,7 @@
     menuWrap: "cgca-folder-menu-wrap",
     count: "cgca-folder-count",
     createLabel: "cgca-folder-create-label",
+    menuPortal: "cgca-folder-menu-portal",
     menuPanel: "cgca-folder-menu-panel",
     menuAction: "cgca-folder-menu-action",
     menuActions: "cgca-folder-menu-actions",

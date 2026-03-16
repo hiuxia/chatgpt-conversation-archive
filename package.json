@@ -3,6 +3,7 @@
   "version": "0.3.0",
   "private": true,
   "scripts": {
+    "test:folders": "node tests/sidebar-folders-selftest.js",
     "test:cdp": "node tests/cdp-markdown-smoke.test.js",
     "test:toc": "node tests/conversation-toc-dom-selftest.js",
     "test:release": "node tests/release-lib-selftest.js",
