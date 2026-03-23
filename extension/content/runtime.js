@@ -32,7 +32,12 @@
     sidebarNav: ['nav[aria-label="Chat history"]'],
     historyAnchors: ['a[href^="/c/"]', 'a[href*="/c/"]'],
     conversationMain: ["main"],
-    turnArticles: ['article[data-testid^="conversation-turn-"]'],
+    turnArticles: [
+      'section[data-testid^="conversation-turn-"]',
+      "section[data-turn-id]",
+      'article[data-testid^="conversation-turn-"]',
+      "article[data-turn-id]"
+    ],
     roleNodes: ["[data-message-author-role]"],
     assistantMarkdown: [".markdown.prose", ".markdown", "[class*='markdown']"]
   };
@@ -71,7 +76,12 @@
     menuActionDanger: "cgca-folder-menu-action-danger",
     menuNotice: "cgca-folder-menu-notice",
     renameForm: "cgca-folder-rename-form",
-    renameInput: "cgca-folder-rename-input"
+    renameInput: "cgca-folder-rename-input",
+    nativeConversationMenuItem: "cgca-native-conversation-menu-item",
+    nativeConversationSubmenuPanel: "cgca-native-conversation-submenu-panel",
+    nativeConversationSubmenuItem: "cgca-native-conversation-submenu-item",
+    nativeConversationSubmenuItemActive: "is-current",
+    nativeConversationSubmenuEmpty: "cgca-native-conversation-submenu-empty"
   };
 
   ns.CONVERSATION_TOC_CLASSES = {
@@ -159,6 +169,102 @@
     const href = anchor?.getAttribute("href") || "";
     if (!href) return "";
     return new URL(href, window.location.origin).toString();
+  };
+
+  ns.getConversationTurnContainers = function getConversationTurnContainers(root = document) {
+    const explicitContainers = ns.queryAllByFallbackSelectors(root, ns.SELECTOR_MAP.turnArticles);
+    if (explicitContainers.length > 0) {
+      return explicitContainers;
+    }
+
+    const roleNodes = ns.queryAllByFallbackSelectors(root, ns.SELECTOR_MAP.roleNodes);
+    const containers = [];
+    const seen = new Set();
+
+    for (const roleNode of roleNodes) {
+      const container =
+        roleNode.closest(
+          [
+            'section[data-testid^="conversation-turn-"]',
+            "section[data-turn-id]",
+            'article[data-testid^="conversation-turn-"]',
+            "article[data-turn-id]"
+          ].join(",")
+        ) || roleNode;
+      if (seen.has(container)) continue;
+      seen.add(container);
+      containers.push(container);
+    }
+
+    return containers;
+  };
+
+  ns.getConversationTurnRole = function getConversationTurnRole(turnNode) {
+    if (!turnNode) return "";
+
+    const explicitRole =
+      turnNode.getAttribute?.("data-turn") || turnNode.getAttribute?.("data-message-author-role") || "";
+    if (explicitRole) {
+      return String(explicitRole).toLowerCase();
+    }
+
+    const roleNode = ns.findFirstByFallbackSelectors(turnNode, ns.SELECTOR_MAP.roleNodes);
+    return String(roleNode?.getAttribute("data-message-author-role") || "").toLowerCase();
+  };
+
+  ns.getConversationTurnRoleNode = function getConversationTurnRoleNode(turnNode, preferredRole = "") {
+    if (!turnNode) return null;
+
+    const explicitRole = ns.getConversationTurnRole(turnNode);
+    if (
+      turnNode.matches?.("[data-message-author-role]") &&
+      (!preferredRole || explicitRole === String(preferredRole || "").toLowerCase())
+    ) {
+      return turnNode;
+    }
+
+    const normalizedPreferredRole = String(preferredRole || "").toLowerCase();
+    if (normalizedPreferredRole) {
+      const preferredNode = turnNode.querySelector(
+        `[data-message-author-role="${CSS.escape(normalizedPreferredRole)}"]`
+      );
+      if (preferredNode) {
+        return preferredNode;
+      }
+    }
+
+    return ns.findFirstByFallbackSelectors(turnNode, ns.SELECTOR_MAP.roleNodes);
+  };
+
+  ns.collectConversationMarkdownRoots = function collectConversationMarkdownRoots(root) {
+    if (!root) return [];
+
+    const nodes = ns.queryAllByFallbackSelectors(root, ns.SELECTOR_MAP.assistantMarkdown);
+    return nodes.filter(
+      (node, index) => !nodes.some((other, otherIndex) => otherIndex !== index && other.contains(node))
+    );
+  };
+
+  ns.collectTurnMarkdownRoots = function collectTurnMarkdownRoots(turnNode, role) {
+    const roots = [];
+    const seen = new Set();
+
+    const appendRoots = (nodes) => {
+      for (const node of nodes || []) {
+        if (!node || seen.has(node)) continue;
+        seen.add(node);
+        roots.push(node);
+      }
+    };
+
+    const roleNode = ns.getConversationTurnRoleNode(turnNode, role);
+    appendRoots(ns.collectConversationMarkdownRoots(roleNode));
+
+    if (turnNode && turnNode !== roleNode) {
+      appendRoots(ns.collectConversationMarkdownRoots(turnNode));
+    }
+
+    return roots;
   };
 
   ns.findConversationAnchor = function findConversationAnchor(conversationId) {

@@ -227,14 +227,12 @@
   };
 
   ns.collectConversationTocTurnModels = function collectConversationTocTurnModels(main) {
-    const articleNodes = ns.queryAllByFallbackSelectors(main, ns.SELECTOR_MAP.turnArticles);
-    const effectiveArticles = articleNodes.length > 0 ? articleNodes : Array.from(main.querySelectorAll("article"));
+    const effectiveArticles = ns.getConversationTurnContainers(main);
     const models = [];
 
     for (let index = 0; index < effectiveArticles.length; index += 1) {
       const article = effectiveArticles[index];
-      const roleNode = article.querySelector("[data-message-author-role]");
-      const role = (roleNode?.getAttribute("data-message-author-role") || "").toLowerCase();
+      const role = ns.getConversationTurnRole(article);
       if (role !== "assistant") continue;
 
       const turnId = ns.ensureConversationTocTurnId(article, index);
@@ -327,9 +325,9 @@
   ns.findPreviousUserTurnText = function findPreviousUserTurnText(effectiveArticles, articleIndex) {
     for (let index = articleIndex - 1; index >= 0; index -= 1) {
       const article = effectiveArticles[index];
-      const roleNode = article?.querySelector("[data-message-author-role]");
-      const role = (roleNode?.getAttribute("data-message-author-role") || "").toLowerCase();
+      const role = ns.getConversationTurnRole(article);
       if (role !== "user") continue;
+      const roleNode = ns.getConversationTurnRoleNode(article, "user");
       const text = ns.cleanText(roleNode?.textContent || article.textContent || "");
       if (text) {
         return text;

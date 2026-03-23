@@ -32,21 +32,23 @@ async function run() {
   const dom = new JSDOM(
     `
       <main>
-        <article data-testid="conversation-turn-1" data-scroll-anchor="false">
+        <section data-testid="conversation-turn-1" data-turn="user" data-scroll-anchor="false">
           <div data-message-author-role="user">Question one with a much longer prefix than we want to keep inside the TOC title preview.</div>
-        </article>
-        <article data-testid="conversation-turn-2" data-scroll-anchor="false">
+        </section>
+        <section data-testid="conversation-turn-2" data-turn="assistant" data-scroll-anchor="false">
+          <div class="turn-reasoning"><button type="button">Thought for 2m 14s</button></div>
           <div data-message-author-role="assistant">
             <div class="markdown prose">
               <h3>Earlier answer</h3>
               <p>intro</p>
             </div>
           </div>
-        </article>
-        <article data-testid="conversation-turn-3" data-scroll-anchor="false">
+        </section>
+        <section data-testid="conversation-turn-3" data-turn="user" data-scroll-anchor="false">
           <div data-message-author-role="user">Question two about methodology sections and how to structure the writeup cleanly for the paper.</div>
-        </article>
-        <article data-testid="conversation-turn-4" data-scroll-anchor="true">
+        </section>
+        <section data-testid="conversation-turn-4" data-turn="assistant" data-scroll-anchor="true">
+          <div class="turn-reasoning"><button type="button">Thought for 8m 03s</button></div>
           <div data-message-author-role="assistant">
             <div class="markdown prose">
               <h2>Current section</h2>
@@ -55,21 +57,21 @@ async function run() {
               <p>more body</p>
             </div>
           </div>
-        </article>
-        <article data-testid="conversation-turn-5" data-scroll-anchor="false">
+        </section>
+        <section data-testid="conversation-turn-5" data-turn="assistant" data-scroll-anchor="false">
           <div data-message-author-role="assistant">
             <div class="markdown prose">
               <p>No headings here</p>
             </div>
           </div>
-        </article>
+        </section>
       </main>
     `,
     { url: "https://chatgpt.com/c/abc123ef-1111-2222-3333-444444444444" }
   );
 
   let lastScrolledTarget = null;
-  for (const element of dom.window.document.querySelectorAll("article, h1, h2, h3, h4, h5, h6")) {
+  for (const element of dom.window.document.querySelectorAll("section, h1, h2, h3, h4, h5, h6")) {
     element.scrollIntoView = () => {
       lastScrolledTarget = element;
     };

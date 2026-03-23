@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "test:folders": "node tests/sidebar-folders-selftest.js",
+    "test:extract": "node tests/history-extractor-dom-selftest.js",
     "test:cdp": "node tests/cdp-markdown-smoke.test.js",
     "test:toc": "node tests/conversation-toc-dom-selftest.js",
     "test:release": "node tests/release-lib-selftest.js",

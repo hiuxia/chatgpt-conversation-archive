@@ -36,6 +36,13 @@
       pendingDeleteFolderId: "",
       menuButtonElements: new Map(),
       floatingMenuLayer: null,
+      nativeMenuObserver: null,
+      observedBody: null,
+      nativeMenuSyncTimer: null,
+      nativeConversationMenuContext: null,
+      nativeConversationSubmenuLayer: null,
+      nativeConversationSubmenuAnchor: null,
+      menuPositionFrame: 0,
       handleDocumentPointerDown: null,
       handleDocumentKeyDown: null,
       handleDocumentScroll: null,
@@ -48,11 +55,22 @@
         this.attachDocumentListeners();
         this.refreshState();
         this.attachNavigationWatcher();
+        this.attachNativeConversationMenuWatcher();
       },
 
       attachDocumentListeners() {
         if (!this.handleDocumentPointerDown) {
           this.handleDocumentPointerDown = (event) => {
+            const nativeConversationMenuContext = ns.resolveNativeConversationMenuContext(event);
+            if (nativeConversationMenuContext) {
+              this.nativeConversationMenuContext = nativeConversationMenuContext;
+              this.scheduleNativeConversationMenuSync(0);
+            }
+
+            if (this.nativeConversationSubmenuLayer && !ns.eventTargetsNativeConversationSubmenu(event)) {
+              this.closeNativeConversationSubmenu();
+            }
+
             if (!this.openMenuFolderId) return;
             if (ns.eventTargetsFolderMenu(event)) return;
             this.closeFolderMenu();
@@ -63,6 +81,11 @@
         if (!this.handleDocumentKeyDown) {
           this.handleDocumentKeyDown = (event) => {
             if (event.key !== "Escape") return;
+            if (this.nativeConversationSubmenuLayer) {
+              event.preventDefault();
+              this.closeNativeConversationSubmenu();
+              return;
+            }
             if (this.openMenuFolderId) {
               event.preventDefault();
               this.closeFolderMenu();
@@ -73,16 +96,14 @@
 
         if (!this.handleDocumentScroll) {
           this.handleDocumentScroll = () => {
-            if (!this.openMenuFolderId) return;
-            this.positionFloatingMenu();
+            this.scheduleMenuPositionSync();
           };
           document.addEventListener("scroll", this.handleDocumentScroll, true);
         }
 
         if (!this.handleWindowResize) {
           this.handleWindowResize = () => {
-            if (!this.openMenuFolderId) return;
-            this.positionFloatingMenu();
+            this.scheduleMenuPositionSync();
           };
           window.addEventListener("resize", this.handleWindowResize);
         }
@@ -116,8 +137,9 @@
           this.observer.disconnect();
         }
 
-        this.observer = new MutationObserver(() => {
+        this.observer = new MutationObserver((mutations) => {
           if (this.isRendering || this.ignoreObservedMutations) return;
+          if (!ns.shouldScheduleSidebarRender(mutations)) return;
           this.scheduleRender(60);
         });
 
@@ -127,6 +149,30 @@
         });
 
         this.observedNav = nav;
+      },
+
+      attachNativeConversationMenuWatcher() {
+        if (!document.body) {
+          this.scheduleNativeConversationMenuSync(250);
+          return;
+        }
+
+        if (this.observedBody === document.body) {
+          return;
+        }
+
+        if (this.nativeMenuObserver) {
+          this.nativeMenuObserver.disconnect();
+        }
+
+        this.nativeMenuObserver = new MutationObserver((mutations) => {
+          if (!ns.shouldScheduleNativeConversationMenuSync(mutations)) return;
+          this.scheduleNativeConversationMenuSync(0);
+        });
+        this.nativeMenuObserver.observe(document.body, {
+          childList: true
+        });
+        this.observedBody = document.body;
       },
 
       scheduleRender(delayMs) {
@@ -141,6 +187,46 @@
             this.scheduleRender(800);
           });
         }, delayMs);
+      },
+
+      scheduleNativeConversationMenuSync(delayMs = 0) {
+        if (this.nativeMenuSyncTimer) {
+          clearTimeout(this.nativeMenuSyncTimer);
+        }
+
+        this.nativeMenuSyncTimer = setTimeout(() => {
+          this.nativeMenuSyncTimer = null;
+          this.syncNativeConversationMenu();
+        }, delayMs);
+      },
+
+      scheduleMenuPositionSync() {
+        if (!this.openMenuFolderId && !this.nativeConversationSubmenuLayer) {
+          this.cancelMenuPositionSync();
+          return;
+        }
+
+        if (this.menuPositionFrame) {
+          return;
+        }
+
+        this.menuPositionFrame = requestAnimationFrame(() => {
+          this.menuPositionFrame = 0;
+          if (this.openMenuFolderId) {
+            this.positionFloatingMenu();
+          }
+          if (this.nativeConversationSubmenuLayer) {
+            this.positionNativeConversationSubmenu();
+          }
+        });
+      },
+
+      cancelMenuPositionSync() {
+        if (!this.menuPositionFrame) {
+          return;
+        }
+        cancelAnimationFrame(this.menuPositionFrame);
+        this.menuPositionFrame = 0;
       },
 
       async render() {
@@ -170,6 +256,7 @@
         try {
           const foldersSection = ns.ensureFoldersSection(nav, yourChatsSection);
           const tree = ns.buildFolderTree(this.state?.folders || []);
+          const chatCountByFolderId = ns.buildAssignedChatCountMap(this.state, tree);
           ns.restoreManagedSidebarChats({
             section: foldersSection,
             historyContainer
@@ -178,7 +265,8 @@
             controller: this,
             state: this.state,
             section: foldersSection,
-            tree
+            tree,
+            chatCountByFolderId
           });
           ns.removeManagedCachedSidebarChats(nav);
           ns.decorateUnassignedSection({
@@ -360,6 +448,9 @@
         this.renamingFolderId = "";
         this.renameDraft = "";
         this.pendingDeleteFolderId = "";
+        if (!this.nativeConversationSubmenuLayer) {
+          this.cancelMenuPositionSync();
+        }
         this.scheduleRender(0);
       },
 
@@ -634,12 +725,211 @@
 
         panel.style.left = `${Math.round(left)}px`;
         panel.style.top = `${Math.round(top)}px`;
+      },
+
+      syncNativeConversationMenu() {
+        this.attachNativeConversationMenuWatcher();
+
+        const menu = ns.findNativeConversationMenu();
+        if (!menu) {
+          this.closeNativeConversationSubmenu();
+          return;
+        }
+
+        if (
+          this.nativeConversationSubmenuLayer &&
+          ns.findExpandedNativeConversationSubmenuTriggers({
+            menu,
+            excludeItem: this.nativeConversationSubmenuAnchor
+          }).length
+        ) {
+          this.closeNativeConversationSubmenu();
+        }
+
+        if (!this.nativeConversationMenuContext) {
+          return;
+        }
+
+        ns.ensureNativeConversationMenuItem({
+          controller: this,
+          menu,
+          context: this.nativeConversationMenuContext
+        });
+      },
+
+      toggleNativeConversationSubmenu(anchor, context, event) {
+        if (event) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+
+        if (
+          this.nativeConversationSubmenuLayer &&
+          this.nativeConversationSubmenuAnchor === anchor
+        ) {
+          this.closeNativeConversationSubmenu();
+          return;
+        }
+
+        if (typeof anchor?.focus === "function") {
+          anchor.focus({
+            preventScroll: true
+          });
+        }
+
+        ns.closeExpandedNativeConversationSubmenus({
+          menu: anchor?.closest?.('[role="menu"]') || null,
+          excludeItem: anchor
+        });
+
+        ns.renderNativeConversationSubmenu({
+          controller: this,
+          anchor,
+          context
+        });
+      },
+
+      closeNativeConversationSubmenu() {
+        ns.destroyNativeConversationSubmenu(this);
+        if (!this.openMenuFolderId) {
+          this.cancelMenuPositionSync();
+        }
+      },
+
+      positionNativeConversationSubmenu() {
+        const panel = this.nativeConversationSubmenuLayer?.querySelector(
+          `.${ns.SIDEBAR_FOLDER_CLASSES.nativeConversationSubmenuPanel}`
+        );
+        const anchor = this.nativeConversationSubmenuAnchor;
+        if (!panel || !anchor || !document.contains(anchor)) {
+          return;
+        }
+
+        const viewportPadding = 8;
+        const gap = 6;
+        panel.style.left = "0px";
+        panel.style.top = "0px";
+
+        const anchorRect = anchor.getBoundingClientRect();
+        const panelRect = panel.getBoundingClientRect();
+
+        let left = anchorRect.right + gap;
+        if (left + panelRect.width > window.innerWidth - viewportPadding) {
+          left = anchorRect.left - panelRect.width - gap;
+        }
+        left = Math.max(
+          viewportPadding,
+          Math.min(left, window.innerWidth - panelRect.width - viewportPadding)
+        );
+
+        let top = anchorRect.top;
+        if (top + panelRect.height > window.innerHeight - viewportPadding) {
+          top = window.innerHeight - panelRect.height - viewportPadding;
+        }
+        top = Math.max(viewportPadding, top);
+
+        panel.style.left = `${Math.round(left)}px`;
+        panel.style.top = `${Math.round(top)}px`;
+      },
+
+      async assignConversationFromMenu(context, folderId) {
+        const response = await ns.sendRuntimeMessage({
+          type: ns.MESSAGE_TYPES.ASSIGN_SIDEBAR_CONVERSATION,
+          conversationId: context.conversationId,
+          folderId,
+          title: context.title,
+          url: context.url
+        });
+
+        if (!response?.ok || !response?.state) {
+          window.alert(response?.error || "Could not move chat into folder.");
+          return;
+        }
+
+        this.state = response.state;
+        this.closeNativeConversationSubmenu();
+        this.scheduleRender(0);
+      },
+
+      async clearConversationFromMenu(context) {
+        const response = await ns.sendRuntimeMessage({
+          type: ns.MESSAGE_TYPES.CLEAR_SIDEBAR_CONVERSATION,
+          conversationId: context.conversationId
+        });
+
+        if (!response?.ok || !response?.state) {
+          window.alert(response?.error || "Could not move chat back to Your chats.");
+          return;
+        }
+
+        this.state = response.state;
+        this.closeNativeConversationSubmenu();
+        this.scheduleRender(0);
       }
     };
   };
 
   ns.querySidebarNav = function querySidebarNav() {
     return ns.findFirstByFallbackSelectors(document, ns.SELECTOR_MAP.sidebarNav);
+  };
+
+  ns.isSidebarRenderMutationNode = function isSidebarRenderMutationNode(node) {
+    if (!(node instanceof Element)) {
+      return false;
+    }
+
+    if (node.closest(`.${ns.SIDEBAR_FOLDER_CLASSES.section}`)) {
+      return false;
+    }
+
+    return Boolean(
+      node.id === "history" ||
+        node.matches?.('a[data-sidebar-item="true"][href*="/c/"]') ||
+        node.querySelector?.('#history, a[data-sidebar-item="true"][href*="/c/"]')
+    );
+  };
+
+  ns.shouldScheduleSidebarRender = function shouldScheduleSidebarRender(mutations) {
+    return mutations.some((mutation) =>
+      [...(mutation?.addedNodes || []), ...(mutation?.removedNodes || [])].some((node) =>
+        ns.isSidebarRenderMutationNode(node)
+      )
+    );
+  };
+
+  ns.isNativeConversationMenuMutationNode = function isNativeConversationMenuMutationNode(node) {
+    if (!(node instanceof Element)) {
+      return false;
+    }
+
+    return Boolean(
+      node.matches?.(
+        [
+          '[role="menu"]',
+          '[role="menuitem"]',
+          '[data-testid="delete-chat-menu-item"]',
+          `.${ns.SIDEBAR_FOLDER_CLASSES.menuPortal}`
+        ].join(",")
+      ) ||
+        node.querySelector?.(
+          [
+            '[role="menu"]',
+            '[role="menuitem"]',
+            '[data-testid="delete-chat-menu-item"]',
+            `.${ns.SIDEBAR_FOLDER_CLASSES.menuPortal}`
+          ].join(",")
+        )
+    );
+  };
+
+  ns.shouldScheduleNativeConversationMenuSync = function shouldScheduleNativeConversationMenuSync(
+    mutations
+  ) {
+    return mutations.some((mutation) =>
+      [...(mutation?.addedNodes || []), ...(mutation?.removedNodes || [])].some((node) =>
+        ns.isNativeConversationMenuMutationNode(node)
+      )
+    );
   };
 
   ns.eventTargetsFolderMenu = function eventTargetsFolderMenu(event) {
@@ -652,6 +942,292 @@
       target.closest(`.${ns.SIDEBAR_FOLDER_CLASSES.menuPanel}`) ||
         target.closest(`.${ns.SIDEBAR_FOLDER_CLASSES.menuButton}`)
     );
+  };
+
+  ns.resolveNativeConversationMenuContext = function resolveNativeConversationMenuContext(event) {
+    const target = event?.target;
+    if (!(target instanceof Element)) {
+      return null;
+    }
+
+    const trigger = target.closest(
+      [
+        'button[aria-label="Open conversation options"]',
+        'button[aria-label^="Open conversation options for "]'
+      ].join(",")
+    );
+    if (!trigger) {
+      return null;
+    }
+
+    const linkedConversation = trigger.closest('a[href*="/c/"]');
+    const linkedUrl = linkedConversation ? ns.getConversationAbsoluteUrl(linkedConversation) : "";
+    const currentUrl = linkedUrl || window.location.href;
+    const conversationId = ns.getConversationIdFromHref(currentUrl);
+    if (!conversationId) {
+      return null;
+    }
+
+    const title = linkedConversation
+      ? ns.getConversationTitleFromAnchor(linkedConversation) || ns.normalizeTitle(document.title)
+      : ns.normalizeTitle(document.title);
+
+    return {
+      conversationId,
+      title,
+      url: linkedUrl || new URL(`/c/${conversationId}`, window.location.origin).toString()
+    };
+  };
+
+  ns.findNativeConversationMenu = function findNativeConversationMenu() {
+    return Array.from(document.querySelectorAll('[role="menu"]')).find((menu) =>
+      Boolean(menu.querySelector('[data-testid="delete-chat-menu-item"]'))
+    );
+  };
+
+  ns.findExpandedNativeConversationSubmenuTriggers = function findExpandedNativeConversationSubmenuTriggers({
+    menu,
+    excludeItem = null
+  }) {
+    return Array.from(menu?.querySelectorAll('[role="menuitem"][aria-haspopup="menu"]') || []).filter(
+      (item) => item !== excludeItem && item.getAttribute("aria-expanded") === "true"
+    );
+  };
+
+  ns.closeExpandedNativeConversationSubmenus = function closeExpandedNativeConversationSubmenus({
+    menu,
+    excludeItem = null
+  }) {
+    const expandedTriggers = ns.findExpandedNativeConversationSubmenuTriggers({
+      menu,
+      excludeItem
+    });
+
+    for (const trigger of expandedTriggers) {
+      const controlledMenuId = trigger.getAttribute("aria-controls");
+      const controlledMenu = controlledMenuId ? document.getElementById(controlledMenuId) : null;
+
+      if (controlledMenu) {
+        const KeyboardEventCtor =
+          globalThis.KeyboardEvent || document.defaultView?.KeyboardEvent || null;
+        controlledMenu.dispatchEvent(
+          KeyboardEventCtor
+            ? new KeyboardEventCtor("keydown", {
+                key: "ArrowLeft",
+                bubbles: true,
+                cancelable: true
+              })
+            : new Event("keydown", {
+                bubbles: true,
+                cancelable: true
+              })
+        );
+      }
+
+      if (trigger.getAttribute("aria-expanded") === "true") {
+        trigger.setAttribute("aria-expanded", "false");
+      }
+      if (trigger.getAttribute("data-state") === "open") {
+        trigger.setAttribute("data-state", "closed");
+      }
+      if (controlledMenu?.isConnected) {
+        controlledMenu.remove();
+      }
+    }
+
+    return expandedTriggers.length;
+  };
+
+  ns.eventTargetsNativeConversationSubmenu = function eventTargetsNativeConversationSubmenu(event) {
+    const target = event?.target;
+    if (!(target instanceof Element)) {
+      return false;
+    }
+
+    return Boolean(
+      target.closest(`.${ns.SIDEBAR_FOLDER_CLASSES.nativeConversationSubmenuPanel}`) ||
+        target.closest(`.${ns.SIDEBAR_FOLDER_CLASSES.nativeConversationMenuItem}`)
+    );
+  };
+
+  ns.findNativeConversationMenuInsertAnchor = function findNativeConversationMenuInsertAnchor(menu) {
+    const items = Array.from(menu?.querySelectorAll('[role="menuitem"]') || []);
+    return (
+      items.find((item) => ns.cleanText(item.textContent || "") === "Pin chat") ||
+      items.find((item) => ns.cleanText(item.textContent || "") === "Archive") ||
+      null
+    );
+  };
+
+  ns.ensureNativeConversationMenuItem = function ensureNativeConversationMenuItem({
+    controller,
+    menu,
+    context
+  }) {
+    if (!menu || !context?.conversationId) {
+      return null;
+    }
+
+    const classes = ns.SIDEBAR_FOLDER_CLASSES;
+    let item = menu.querySelector(`.${classes.nativeConversationMenuItem}`);
+    if (!item) {
+      item = document.createElement("div");
+      item.setAttribute("role", "menuitem");
+      item.setAttribute("tabindex", "-1");
+      item.dataset.orientation = "vertical";
+      item.dataset.radixCollectionItem = "";
+      item.className = `group __menu-item gap-1.5 ${classes.nativeConversationMenuItem}`;
+
+      const icon = ns.createMenuIcon(ns.createFolderGlyph());
+      item.appendChild(icon);
+      item.appendChild(ns.createGrowLabel("Move to folders"));
+      item.appendChild(
+        ns.createMenuIcon(
+          ns.createIconSvg(
+            "M7.03 4.97a.75.75 0 0 1 1.06 0l4 4a.75.75 0 0 1 0 1.06l-4 4a.75.75 0 1 1-1.06-1.06L10.5 9.5 7.03 6.03a.75.75 0 0 1 0-1.06Z"
+          )
+        )
+      );
+      item.setAttribute("aria-haspopup", "menu");
+
+      const openSubmenu = (event) => controller.toggleNativeConversationSubmenu(item, context, event);
+      item.addEventListener("pointerdown", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      });
+      item.addEventListener("click", openSubmenu);
+      item.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          openSubmenu(event);
+        }
+      });
+
+      const insertAnchor = ns.findNativeConversationMenuInsertAnchor(menu);
+      if (insertAnchor) {
+        menu.insertBefore(item, insertAnchor);
+      } else {
+        menu.appendChild(item);
+      }
+    }
+
+    item.dataset.conversationId = context.conversationId;
+    item.setAttribute(
+      "aria-expanded",
+      controller.nativeConversationSubmenuAnchor === item ? "true" : "false"
+    );
+    return item;
+  };
+
+  ns.flattenFolderTreeNodes = function flattenFolderTreeNodes(tree) {
+    const items = [];
+
+    const visit = (folder, depth) => {
+      items.push({
+        folder,
+        depth
+      });
+      for (const child of tree.childrenById.get(folder.id) || []) {
+        visit(child, depth + 1);
+      }
+    };
+
+    for (const root of tree.roots || []) {
+      visit(root, 0);
+    }
+
+    return items;
+  };
+
+  ns.createNativeConversationSubmenuPanel = function createNativeConversationSubmenuPanel({
+    controller,
+    context
+  }) {
+    const classes = ns.SIDEBAR_FOLDER_CLASSES;
+    const panel = document.createElement("div");
+    panel.className = `${classes.menuPanel} ${classes.nativeConversationSubmenuPanel}`;
+
+    const tree = ns.buildFolderTree(controller.state?.folders || []);
+    const assignedFolderId = controller.state?.assignments?.[context.conversationId]?.folderId || "";
+    const folderItems = ns.flattenFolderTreeNodes(tree);
+
+    if (assignedFolderId) {
+      const clearAction = document.createElement("button");
+      clearAction.type = "button";
+      clearAction.className = `${classes.menuAction} ${classes.nativeConversationSubmenuItem}`;
+      clearAction.textContent = "Move to Your chats";
+      clearAction.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        controller.clearConversationFromMenu(context);
+      });
+      panel.appendChild(clearAction);
+    }
+
+    if (!folderItems.length) {
+      const empty = document.createElement("div");
+      empty.className = `${classes.menuNotice} ${classes.nativeConversationSubmenuEmpty}`;
+      empty.textContent = "Create a folder in the sidebar first.";
+      panel.appendChild(empty);
+      return panel;
+    }
+
+    for (const item of folderItems) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = `${classes.menuAction} ${classes.nativeConversationSubmenuItem}`;
+      if (item.folder.id === assignedFolderId) {
+        button.classList.add(classes.nativeConversationSubmenuItemActive);
+      }
+      button.style.paddingLeft = `${0.7 + item.depth * 0.9}rem`;
+      button.textContent =
+        item.folder.id === assignedFolderId ? `${item.folder.name} (Current)` : item.folder.name;
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        controller.assignConversationFromMenu(context, item.folder.id);
+      });
+      panel.appendChild(button);
+    }
+
+    return panel;
+  };
+
+  ns.renderNativeConversationSubmenu = function renderNativeConversationSubmenu({
+    controller,
+    anchor,
+    context
+  }) {
+    ns.destroyNativeConversationSubmenu(controller);
+
+    const layer = document.createElement("div");
+    layer.className = ns.SIDEBAR_FOLDER_CLASSES.menuPortal;
+    const panel = ns.createNativeConversationSubmenuPanel({
+      controller,
+      context
+    });
+    layer.appendChild(panel);
+    document.body.appendChild(layer);
+
+    controller.nativeConversationSubmenuLayer = layer;
+    controller.nativeConversationSubmenuAnchor = anchor;
+    controller.positionNativeConversationSubmenu();
+    anchor.setAttribute("aria-expanded", "true");
+  };
+
+  ns.destroyNativeConversationSubmenu = function destroyNativeConversationSubmenu(controller) {
+    if (controller?.nativeConversationSubmenuAnchor) {
+      controller.nativeConversationSubmenuAnchor.setAttribute("aria-expanded", "false");
+    }
+
+    const layer = controller?.nativeConversationSubmenuLayer;
+    if (layer) {
+      layer.remove();
+    }
+
+    if (controller) {
+      controller.nativeConversationSubmenuLayer = null;
+      controller.nativeConversationSubmenuAnchor = null;
+    }
   };
 
   ns.ensureFoldersSection = function ensureFoldersSection(nav, yourChatsSection) {
@@ -688,8 +1264,14 @@
     }
   };
 
-  ns.renderFoldersSection = function renderFoldersSection({ controller, state, section, tree }) {
-    section.textContent = "";
+  ns.renderFoldersSection = function renderFoldersSection({
+    controller,
+    state,
+    section,
+    tree,
+    chatCountByFolderId
+  }) {
+    const fragment = document.createDocumentFragment();
 
     const headerButton = document.createElement("button");
     headerButton.type = "button";
@@ -703,14 +1285,15 @@
     headerLabel.textContent = "Folders";
     headerButton.appendChild(headerLabel);
     headerButton.appendChild(ns.createSectionChevron(state?.ui?.sectionExpanded !== false));
-    section.appendChild(headerButton);
+    fragment.appendChild(headerButton);
 
     if (state?.ui?.sectionExpanded === false) {
+      section.replaceChildren(fragment);
       return new Map();
     }
 
     if (controller.isCreatingFolder && !controller.createParentFolderId) {
-      section.appendChild(ns.createFolderCreateForm(controller));
+      fragment.appendChild(ns.createFolderCreateForm(controller));
     } else {
       const createButton = document.createElement("button");
       createButton.type = "button";
@@ -719,7 +1302,7 @@
       createButton.addEventListener("click", () => controller.beginCreateFolder());
       createButton.appendChild(ns.createMenuIcon(ns.createPlusGlyph()));
       createButton.appendChild(ns.createGrowLabel("New folder", ns.SIDEBAR_FOLDER_CLASSES.createLabel));
-      section.appendChild(createButton);
+      fragment.appendChild(createButton);
     }
 
     const folderContainers = new Map();
@@ -729,11 +1312,13 @@
         state,
         tree,
         folder: rootFolder,
-        parentElement: section,
-        folderContainers
+        parentElement: fragment,
+        folderContainers,
+        chatCountByFolderId
       });
     }
 
+    section.replaceChildren(fragment);
     return folderContainers;
   };
 
@@ -783,7 +1368,8 @@
     tree,
     folder,
     parentElement,
-    folderContainers
+    folderContainers,
+    chatCountByFolderId
   }) {
     const block = document.createElement("div");
     block.className = ns.SIDEBAR_FOLDER_CLASSES.folderBlock;
@@ -829,7 +1415,7 @@
 
     const count = document.createElement("div");
     count.className = ns.SIDEBAR_FOLDER_CLASSES.count;
-    count.textContent = String(ns.countAssignedChats(state, tree, folder.id));
+    count.textContent = String(chatCountByFolderId?.get(folder.id) || 0);
     trailingPair.appendChild(count);
 
     const menuWrap = document.createElement("div");
@@ -876,7 +1462,8 @@
         tree,
         folder: childFolder,
         parentElement: children,
-        folderContainers
+        folderContainers,
+        chatCountByFolderId
       });
     }
 
@@ -1194,6 +1781,34 @@
     return Object.values(state?.assignments || {}).filter((assignment) =>
       visibleFolderIds.has(assignment?.folderId)
     ).length;
+  };
+
+  ns.buildAssignedChatCountMap = function buildAssignedChatCountMap(state, tree) {
+    const counts = new Map();
+
+    for (const folderId of tree.folderById.keys()) {
+      counts.set(folderId, 0);
+    }
+
+    for (const assignment of Object.values(state?.assignments || {})) {
+      const folderId = assignment?.folderId;
+      if (!folderId || !counts.has(folderId)) {
+        continue;
+      }
+      counts.set(folderId, (counts.get(folderId) || 0) + 1);
+    }
+
+    const foldersByDepth = Array.from(tree.depthById.entries()).sort((left, right) => right[1] - left[1]);
+    for (const [folderId] of foldersByDepth) {
+      const folder = tree.folderById.get(folderId);
+      const parentFolderId = ns.resolveRenderableParentFolderId(tree.folderById, folder);
+      if (!parentFolderId || !counts.has(parentFolderId)) {
+        continue;
+      }
+      counts.set(parentFolderId, (counts.get(parentFolderId) || 0) + (counts.get(folderId) || 0));
+    }
+
+    return counts;
   };
 
   ns.getDeleteFolderNoticeText = function getDeleteFolderNoticeText(folderName, tree, folderId) {
@@ -1587,6 +2202,9 @@
           0 2px 8px rgba(15, 23, 42, 0.04);
         backdrop-filter: blur(10px);
       }
+      .${classes.nativeConversationSubmenuPanel} {
+        width: min(16rem, calc(100vw - 1rem));
+      }
       .${classes.menuActions},
       .${classes.renameForm} {
         display: grid;
@@ -1620,12 +2238,23 @@
       .${classes.menuAction}:hover {
         background: rgba(0, 0, 0, 0.045);
       }
+      .${classes.nativeConversationMenuItem}[aria-expanded="true"] {
+        background: rgba(0, 0, 0, 0.045);
+      }
       .${classes.menuActionsInline} > .${classes.menuAction} {
         width: auto;
         min-width: 0;
         border: 1px solid rgba(0, 0, 0, 0.06);
         padding-inline: 0.75rem;
         background: var(--bg-primary, rgba(255, 255, 255, 0.82));
+      }
+      .${classes.nativeConversationSubmenuItem}.${classes.nativeConversationSubmenuItemActive} {
+        background: rgba(15, 118, 110, 0.1);
+        color: rgb(15, 118, 110);
+        font-weight: 600;
+      }
+      .${classes.nativeConversationSubmenuEmpty} {
+        max-width: 14rem;
       }
       .${classes.menuActionDanger} {
         color: #b42318;

@@ -49,7 +49,7 @@
 
     const turns = turnNodes
       .map((node) => {
-        const role = (node.getAttribute("data-message-author-role") || "unknown").toLowerCase();
+        const role = ns.getConversationTurnRole(node) || "unknown";
         const { text, markdown } = ns.getTurnContent(node, role);
         const attachments = ns.getTurnAttachments(node);
         return {
@@ -71,22 +71,23 @@
   };
 
   ns.getTurnNodesInOrder = function getTurnNodesInOrder() {
-    const articleTurns = ns
-      .queryAllByFallbackSelectors(document, ns.SELECTOR_MAP.turnArticles)
-      .map((article) => ns.findFirstByFallbackSelectors(article, ns.SELECTOR_MAP.roleNodes))
-      .filter(Boolean);
-
-    if (articleTurns.length > 0) {
-      return articleTurns;
+    const turnContainers = ns.getConversationTurnContainers(document);
+    if (turnContainers.length > 0) {
+      return turnContainers;
     }
 
     return ns.queryAllByFallbackSelectors(document, ns.SELECTOR_MAP.roleNodes);
   };
 
   ns.getTurnContent = function getTurnContent(turnNode, role) {
-    const markdownNode = ns.findFirstByFallbackSelectors(turnNode, ns.SELECTOR_MAP.assistantMarkdown);
-    if (markdownNode) {
-      const markdown = ns.cleanText(ns.domToMarkdown(markdownNode));
+    const markdownRoots = role === "assistant" ? ns.collectTurnMarkdownRoots(turnNode, role) : [];
+    if (markdownRoots.length > 0) {
+      const markdown = ns.cleanText(
+        markdownRoots
+          .map((node) => ns.cleanText(ns.domToMarkdown(node)))
+          .filter(Boolean)
+          .join("\n\n")
+      );
       if (markdown) {
         return {
           text: markdown,
@@ -95,7 +96,8 @@
       }
     }
 
-    const text = ns.cleanText(turnNode.innerText);
+    const textSource = ns.getConversationTurnRoleNode(turnNode, role) || turnNode;
+    const text = ns.cleanText(textSource?.innerText || textSource?.textContent || "");
     if (role === "user") {
       return {
         text,

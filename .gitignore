@@ -8,3 +8,7 @@ temp/
 PRIVACY.md
 SECURITY.md
 RELEASE_NOTES_*.md
+prototype/conversation-toc-review.css
+prototype/conversation-toc-review.html
+prototype/conversation-toc-dots-review.css
+prototype/conversation-toc-dots-review.html

@@ -40,6 +40,7 @@ Some conversations are worth keeping. Voyager lets you export the current conver
 - Add a `Folders` section to ChatGPT's native left sidebar
 - Create nested folders inline
 - Drag chats into folders, or drag them back to `Your chats`
+- Move a chat into folders from ChatGPT's native `...` chat menu
 - Keep folder state resilient with a local conversation cache
 
 ### Conversation reading
@@ -70,7 +71,7 @@ Some conversations are worth keeping. Voyager lets you export the current conver
 1. Find `Folders` in the ChatGPT left sidebar
 2. Click `New folder` to create a top-level folder
 3. Use the `...` menu to rename, delete, or create a subfolder
-4. Drag conversations into folders
+4. Drag conversations into folders, or use the native chat `...` menu and choose `Move to folders`
 5. Drag a folder into another folder to create a nested tree
 
 Notes:
