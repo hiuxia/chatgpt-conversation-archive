@@ -2,6 +2,29 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.0] - 2026-03-23
+
+### Added
+
+1. localize conversation toc labels to English
+
+### Fixed
+
+1. delete folder trees and unclipped folder menus
+2. reduce noisy toc rerenders
+3. update selectors and optimize folder menus
+
+### Changed
+
+1. add bilingual README navigation
+2. improve README capability layout
+3. refine README wording and setup guidance
+4. make English the default README
+5. stop tracking docs and temp files
+6. rewrite README as a product landing page
+7. stop tracking generated test reports
+8. remove failing release self-tests
+
 ## [0.3.0] - 2026-03-12
 
 ### Added
