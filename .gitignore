@@ -1,6 +1,16 @@
 node_modules/
 release/
 .DS_Store
+.env
+.env.*
+*.local
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+id_rsa
+id_ed25519
 *.log
 tests/reports/
 doc/

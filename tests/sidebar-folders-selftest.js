@@ -18,6 +18,10 @@ function assert(condition, message) {
   }
 }
 
+function wait(ms = 0) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function loadContentModules(context) {
   vm.createContext(context);
   for (const filePath of CONTENT_MODULES) {
@@ -25,27 +29,64 @@ function loadContentModules(context) {
   }
 }
 
-function createChromeStub(initialFolderState) {
+function createChromeStub(initialFolderState, options = {}) {
   const storageData = {
     "sidebarFolders.v1": initialFolderState
   };
+  const runtimeListeners = {
+    onInstalled: [],
+    onStartup: [],
+    onMessage: []
+  };
+  const executedScripts = [];
+  const queryRequests = [];
+  const sidePanelCalls = [];
 
   return {
     storageData,
+    executedScripts,
+    queryRequests,
+    runtimeListeners,
+    sidePanelCalls,
     chrome: {
       runtime: {
         onInstalled: {
-          addListener() {}
+          addListener(listener) {
+            runtimeListeners.onInstalled.push(listener);
+          }
+        },
+        onStartup: {
+          addListener(listener) {
+            runtimeListeners.onStartup.push(listener);
+          }
         },
         onMessage: {
-          addListener() {}
+          addListener(listener) {
+            runtimeListeners.onMessage.push(listener);
+          }
         },
         async sendMessage() {
           return { ok: true };
         }
       },
       sidePanel: {
-        async setPanelBehavior() {}
+        async setPanelBehavior(config) {
+          sidePanelCalls.push(config);
+        }
+      },
+      tabs: {
+        async query(queryInfo) {
+          queryRequests.push(queryInfo);
+          return [...(options.tabs || [])];
+        }
+      },
+      scripting: {
+        async executeScript(details) {
+          executedScripts.push(details);
+          if (typeof options.onExecuteScript === "function") {
+            return options.onExecuteScript(details);
+          }
+        }
       },
       storage: {
         local: {
@@ -64,13 +105,22 @@ function createChromeStub(initialFolderState) {
   };
 }
 
-function loadBackgroundHooks(initialFolderState) {
+function loadBackgroundHooks(initialFolderState, options = {}) {
   const source = `${fs.readFileSync(BACKGROUND_PATH, "utf8")}
 ;globalThis.__sidebarFolderSelftestHooks = {
   deleteSidebarFolder,
+  reinjectContentScript,
+  reinjectContentScriptsIntoOpenChatGptTabs,
   SIDEBAR_FOLDER_STORAGE_KEY
 };`;
-  const { chrome, storageData } = createChromeStub(initialFolderState);
+  const {
+    chrome,
+    storageData,
+    executedScripts,
+    queryRequests,
+    runtimeListeners,
+    sidePanelCalls
+  } = createChromeStub(initialFolderState, options);
   const context = {
     console,
     setTimeout,
@@ -88,7 +138,11 @@ function loadBackgroundHooks(initialFolderState) {
 
   return {
     hooks: context.__sidebarFolderSelftestHooks,
-    storageData
+    storageData,
+    executedScripts,
+    queryRequests,
+    runtimeListeners,
+    sidePanelCalls
   };
 }
 
@@ -180,6 +234,251 @@ async function runBackgroundDeleteTest() {
   );
 }
 
+async function runBackgroundLifecycleRecoveryTest() {
+  const {
+    hooks,
+    executedScripts,
+    queryRequests,
+    runtimeListeners,
+    sidePanelCalls
+  } = loadBackgroundHooks(null, {
+    tabs: [
+      {
+        id: 11,
+        url: "https://chatgpt.com/c/69c026ec-d534-83a2-9510-35b7ce8b0e65"
+      },
+      {
+        id: 12,
+        url: "https://chatgpt.com/"
+      },
+      {
+        url: "https://chatgpt.com/c/missing-id"
+      }
+    ]
+  });
+
+  assert(
+    runtimeListeners.onInstalled.length === 1,
+    "Background should register an onInstalled lifecycle listener."
+  );
+  assert(
+    runtimeListeners.onStartup.length === 1,
+    "Background should register an onStartup lifecycle listener."
+  );
+
+  await hooks.reinjectContentScriptsIntoOpenChatGptTabs();
+  assert(
+    JSON.stringify(queryRequests[0]) === JSON.stringify({ url: ["https://chatgpt.com/*"] }),
+    "Open-tab reinjection should query only chatgpt.com tabs."
+  );
+  assert(
+    executedScripts.filter((call) => typeof call.func === "function").length === 2,
+    "Open-tab reinjection should reset every matching tab before injecting new content scripts."
+  );
+  assert(
+    executedScripts.filter((call) => Array.isArray(call.files)).length === 2,
+    "Open-tab reinjection should inject the content script bundle into every matching tab with an id."
+  );
+  assert(
+    executedScripts
+      .filter((call) => Array.isArray(call.files))
+      .every((call) => call.files.includes("content/sidebar-folders.js")),
+    "Reinjection should include the sidebar folder content script bundle."
+  );
+
+  await runtimeListeners.onInstalled[0]();
+  assert(
+    sidePanelCalls.length === 1,
+    "Install recovery should preserve side panel behavior setup."
+  );
+  assert(
+    executedScripts.length === 8,
+    "Install recovery should also reinject content scripts into open ChatGPT tabs."
+  );
+
+  await runtimeListeners.onStartup[0]();
+  assert(
+    executedScripts.length === 12,
+    "Startup recovery should reinject content scripts into restored ChatGPT tabs."
+  );
+}
+
+async function runReinjectResetLifecycleTest() {
+  const conversationId = "69c026ec-d534-83a2-9510-35b7ce8b0e65";
+  const folderState = {
+    folders: [],
+    assignments: {},
+    conversations: [],
+    ui: {
+      sectionExpanded: true
+    }
+  };
+  const dom = new JSDOM(
+    `
+      <nav aria-label="Chat history">
+        <section>
+          <div id="history">
+            <a href="/c/${conversationId}">
+              <span class="truncate">Reinject test chat</span>
+            </a>
+          </div>
+        </section>
+      </nav>
+      <main>
+        <section data-testid="conversation-turn-1" data-turn="user" data-scroll-anchor="false">
+          <div data-message-author-role="user">How do we recover stale content scripts?</div>
+        </section>
+        <section data-testid="conversation-turn-2" data-turn="assistant" data-scroll-anchor="true">
+          <div data-message-author-role="assistant">
+            <div class="markdown prose">
+              <h2>Recovery plan</h2>
+              <p>Reset the old runtime before reinjecting.</p>
+            </div>
+          </div>
+        </section>
+      </main>
+    `,
+    {
+      url: `https://chatgpt.com/c/${conversationId}`
+    }
+  );
+  class IntersectionObserverStub {
+    constructor(callback) {
+      this.callback = callback;
+      this.elements = new Set();
+    }
+
+    observe(element) {
+      this.elements.add(element);
+    }
+
+    disconnect() {
+      this.elements.clear();
+    }
+  }
+
+  const pageContext = {
+    window: dom.window,
+    document: dom.window.document,
+    Node: dom.window.Node,
+    Element: dom.window.Element,
+    HTMLElement: dom.window.HTMLElement,
+    MutationObserver: dom.window.MutationObserver,
+    IntersectionObserver: IntersectionObserverStub,
+    URL: dom.window.URL,
+    AbortController: dom.window.AbortController || AbortController,
+    CSS: {
+      ...(dom.window.CSS || {}),
+      escape: (value) => String(value).replace(/["\\]/g, "\\$&")
+    },
+    chrome: {
+      runtime: {
+        onMessage: {
+          addListener(listener) {
+            return listener;
+          }
+        },
+        async sendMessage(message) {
+          if (
+            message?.type === "GET_SIDEBAR_FOLDER_STATE" ||
+            message?.type === "UPSERT_SIDEBAR_CONVERSATIONS"
+          ) {
+            return { ok: true, state: folderState };
+          }
+
+          return { ok: true };
+        }
+      }
+    },
+    console,
+    setTimeout,
+    clearTimeout,
+    requestAnimationFrame: (callback) => setTimeout(callback, 0),
+    cancelAnimationFrame: (id) => clearTimeout(id)
+  };
+  pageContext.globalThis = pageContext;
+  pageContext.window.alert = () => {};
+  vm.createContext(pageContext);
+
+  const { hooks } = loadBackgroundHooks(null, {
+    onExecuteScript(details) {
+      if (typeof details.func === "function") {
+        vm.runInContext(`(${details.func.toString()})();`, pageContext, {
+          filename: "reinject-reset.js"
+        });
+        return;
+      }
+
+      for (const relativePath of details.files || []) {
+        const filePath = path.join(PROJECT_ROOT, "extension", relativePath);
+        vm.runInContext(fs.readFileSync(filePath, "utf8"), pageContext, { filename: filePath });
+      }
+    }
+  });
+
+  await hooks.reinjectContentScript(11);
+  await wait(20);
+
+  const firstNs = pageContext.__chatgptConversationArchiveContent;
+  const firstSidebarController = firstNs?.sidebarFolderController;
+  const firstTocController = firstNs?.conversationTocController;
+
+  assert(
+    firstNs && pageContext.__chatgptConversationArchiveInjected === true,
+    "Initial reinjection should bootstrap the shared content runtime."
+  );
+  assert(
+    firstSidebarController?.started === true,
+    "Initial reinjection should start the sidebar folder controller."
+  );
+  assert(
+    firstTocController?.started === true,
+    "Initial reinjection should start the conversation TOC controller."
+  );
+  assert(
+    dom.window.document.querySelectorAll(".cgca-folder-section").length === 1,
+    "Initial reinjection should render one sidebar folder section."
+  );
+  assert(
+    dom.window.document.querySelectorAll(".cgca-conversation-toc-rail").length === 1,
+    "Initial reinjection should render one conversation TOC rail."
+  );
+
+  await hooks.reinjectContentScript(11);
+  await wait(20);
+
+  const secondNs = pageContext.__chatgptConversationArchiveContent;
+
+  assert(
+    secondNs && secondNs !== firstNs,
+    "Reinjecting into an already open tab should replace the stale shared runtime object."
+  );
+  assert(
+    firstSidebarController?.started === false,
+    "Reinjecting should stop the previous sidebar folder controller before replacing it."
+  );
+  assert(
+    firstTocController?.started === false,
+    "Reinjecting should stop the previous conversation TOC controller before replacing it."
+  );
+  assert(
+    secondNs.sidebarFolderController?.started === true,
+    "Reinjecting should restart the sidebar folder controller with the fresh runtime."
+  );
+  assert(
+    secondNs.conversationTocController?.started === true,
+    "Reinjecting should restart the conversation TOC controller with the fresh runtime."
+  );
+  assert(
+    dom.window.document.querySelectorAll(".cgca-folder-section").length === 1,
+    "Reinjecting should leave only one sidebar folder section in the DOM."
+  );
+  assert(
+    dom.window.document.querySelectorAll(".cgca-conversation-toc-rail").length === 1,
+    "Reinjecting should leave only one conversation TOC rail in the DOM."
+  );
+}
+
 function runSidebarPerformanceHelperTest() {
   const dom = new JSDOM("<!doctype html><html><head></head><body></body></html>", {
     url: "https://chatgpt.com/"
@@ -192,6 +491,7 @@ function runSidebarPerformanceHelperTest() {
     HTMLElement: dom.window.HTMLElement,
     MutationObserver: dom.window.MutationObserver,
     URL: dom.window.URL,
+    AbortController: dom.window.AbortController || AbortController,
     CSS: {
       ...(dom.window.CSS || {}),
       escape: (value) => String(value).replace(/["\\]/g, "\\$&")
@@ -285,6 +585,7 @@ function runFloatingMenuDomTest() {
     HTMLElement: dom.window.HTMLElement,
     MutationObserver: dom.window.MutationObserver,
     URL: dom.window.URL,
+    AbortController: dom.window.AbortController || AbortController,
     CSS: {
       ...(dom.window.CSS || {}),
       escape: (value) => String(value).replace(/["\\]/g, "\\$&")
@@ -442,6 +743,7 @@ async function runNativeConversationMenuInjectionTest() {
     HTMLElement: dom.window.HTMLElement,
     MutationObserver: dom.window.MutationObserver,
     URL: dom.window.URL,
+    AbortController: dom.window.AbortController || AbortController,
     CSS: {
       ...(dom.window.CSS || {}),
       escape: (value) => String(value).replace(/["\\]/g, "\\$&")
@@ -487,8 +789,8 @@ async function runNativeConversationMenuInjectionTest() {
   ns.ensureSidebarFolderStyles();
 
   const controller = ns.createSidebarFolderController();
-  controller.state = initialState;
-  controller.attachDocumentListeners();
+  controller.start();
+  await new Promise((resolve) => setTimeout(resolve, 0));
 
   const projectMenuItem = dom.window.document.querySelector('[role="menuitem"]');
   projectMenuItem.setAttribute("aria-haspopup", "menu");
@@ -622,6 +924,25 @@ async function runNativeConversationMenuInjectionTest() {
     "Opening the native Move to project submenu should close the folders submenu."
   );
 
+  injectedItem.dispatchEvent(
+    new dom.window.MouseEvent("click", {
+      bubbles: true
+    })
+  );
+  assert(
+    dom.window.document.querySelector(`.${ns.SIDEBAR_FOLDER_CLASSES.nativeConversationSubmenuPanel}`),
+    "Move to folders should open before testing native menu teardown."
+  );
+
+  const nativeMenu = dom.window.document.querySelector('[role="menu"]');
+  nativeMenu?.remove();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert(
+    dom.window.document.querySelector(`.${ns.SIDEBAR_FOLDER_CLASSES.nativeConversationSubmenuPanel}`),
+    "Folder picker submenu should stay open if ChatGPT closes the native menu after selecting Move to folders."
+  );
+
   dom.window.HTMLElement.prototype.getBoundingClientRect = originalRect;
 
   return {
@@ -630,11 +951,137 @@ async function runNativeConversationMenuInjectionTest() {
   };
 }
 
+async function runRuntimeInvalidationTeardownTest() {
+  const conversationId = "69c026ec-d534-83a2-9510-35b7ce8b0e65";
+  const dom = new JSDOM(
+    `
+      <!doctype html>
+      <html>
+        <head></head>
+        <body>
+          <nav aria-label="Chat history">
+            <div>
+              <div id="history">
+                <a href="/c/${conversationId}" data-sidebar-item="true">
+                  <span class="truncate">Conversation One</span>
+                </a>
+              </div>
+            </div>
+          </nav>
+        </body>
+      </html>
+    `,
+    {
+      url: `https://chatgpt.com/c/${conversationId}`
+    }
+  );
+
+  let runtimeMode = "healthy";
+  const initialState = {
+    folders: [
+      {
+        id: "root",
+        name: "Root",
+        parentFolderId: null,
+        order: 0,
+        expanded: true
+      }
+    ],
+    assignments: {},
+    ui: {
+      sectionExpanded: true
+    }
+  };
+
+  const context = {
+    window: dom.window,
+    document: dom.window.document,
+    Node: dom.window.Node,
+    Element: dom.window.Element,
+    HTMLElement: dom.window.HTMLElement,
+    MutationObserver: dom.window.MutationObserver,
+    URL: dom.window.URL,
+    AbortController: dom.window.AbortController || AbortController,
+    CSS: {
+      ...(dom.window.CSS || {}),
+      escape: (value) => String(value).replace(/["\\]/g, "\\$&")
+    },
+    chrome: {
+      runtime: {
+        async sendMessage(message) {
+          if (runtimeMode === "invalidated") {
+            throw new Error("Extension context invalidated.");
+          }
+
+          if (message?.type === "GET_SIDEBAR_FOLDER_STATE") {
+            return { ok: true, state: initialState };
+          }
+
+          return { ok: true, state: initialState };
+        }
+      }
+    },
+    console,
+    setTimeout,
+    clearTimeout,
+    requestAnimationFrame: (callback) => setTimeout(callback, 0),
+    cancelAnimationFrame: (id) => clearTimeout(id)
+  };
+  context.globalThis = context;
+
+  loadContentModules(context);
+
+  const ns = context.__chatgptConversationArchiveContent;
+  const controller = ns.createSidebarFolderController();
+  controller.start();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await controller.render();
+
+  const ownedSectionSelector =
+    `.${ns.SIDEBAR_FOLDER_CLASSES.section}[data-cgca-owner="${controller.instanceId}"]`;
+  assert(
+    dom.window.document.querySelector(ownedSectionSelector),
+    "Sidebar controller should stamp its rendered folder section with an owner id."
+  );
+
+  runtimeMode = "invalidated";
+  controller.visibleConversationSignature = "";
+  await controller.syncVisibleConversationCatalog(ns.querySidebarNav());
+
+  assert(
+    ns.runtimeContextInvalidated === true,
+    "Runtime helper should remember that the extension context is invalidated."
+  );
+  assert(
+    controller.started === false,
+    "Sidebar controller should stop after the extension runtime is invalidated."
+  );
+  assert(
+    !dom.window.document.querySelector(ownedSectionSelector),
+    "Invalidated sidebar UI should be removed so dead controls are not left behind."
+  );
+  assert(
+    dom.window.document.querySelector(`#history a[href="/c/${conversationId}"]`),
+    "Native sidebar anchors should remain in history after the invalidated controller tears down."
+  );
+
+  const invalidatedResponse = await ns.sendRuntimeMessage({
+    type: ns.MESSAGE_TYPES.GET_SIDEBAR_FOLDER_STATE
+  });
+  assert(
+    ns.isRuntimeInvalidatedResponse(invalidatedResponse),
+    "Runtime helper should short-circuit repeated invalidated calls after the first failure."
+  );
+}
+
 async function run() {
   await runBackgroundDeleteTest();
+  await runBackgroundLifecycleRecoveryTest();
+  await runReinjectResetLifecycleTest();
   runSidebarPerformanceHelperTest();
   const domReport = runFloatingMenuDomTest();
   const nativeMenuReport = await runNativeConversationMenuInjectionTest();
+  await runRuntimeInvalidationTeardownTest();
 
   fs.mkdirSync(path.dirname(REPORT_PATH), { recursive: true });
   fs.writeFileSync(

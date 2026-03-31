@@ -271,6 +271,20 @@ async function run() {
     "Clicking outside the rail should collapse the TOC."
   );
 
+  controller.stop();
+  await wait(0);
+  assert(
+    !dom.window.document.querySelector(".cgca-conversation-toc-rail"),
+    "Stopping the TOC controller should remove the rail from the DOM."
+  );
+
+  controller.start();
+  await wait(10);
+  assert(
+    dom.window.document.querySelector(".cgca-conversation-toc-rail"),
+    "Restarting the TOC controller should render the rail again after teardown."
+  );
+
   fs.mkdirSync(path.dirname(REPORT_PATH), { recursive: true });
   fs.writeFileSync(
     REPORT_PATH,

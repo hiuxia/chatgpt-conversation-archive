@@ -41,6 +41,20 @@ chrome.runtime.onInstalled.addListener(async () => {
   } catch (error) {
     console.warn("Failed to set side panel behavior:", error);
   }
+
+  try {
+    await reinjectContentScriptsIntoOpenChatGptTabs();
+  } catch (error) {
+    console.warn("Failed to reinject content scripts on install/update:", error);
+  }
+});
+
+chrome.runtime.onStartup.addListener(async () => {
+  try {
+    await reinjectContentScriptsIntoOpenChatGptTabs();
+  } catch (error) {
+    console.warn("Failed to reinject content scripts on startup:", error);
+  }
 });
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
@@ -521,11 +535,159 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function resetInjectedContentRuntimeForReinject() {
+  const ns = globalThis.__chatgptConversationArchiveContent;
+
+  function safeStopController(controller) {
+    if (!controller) {
+      return;
+    }
+
+    if (typeof controller.stop === "function") {
+      try {
+        controller.stop();
+        return;
+      } catch (_) {
+        // Fall through to the manual cleanup path.
+      }
+    }
+
+    if (controller.renderTimer) {
+      clearTimeout(controller.renderTimer);
+      controller.renderTimer = null;
+    }
+    if (controller.observerResumeTimer) {
+      clearTimeout(controller.observerResumeTimer);
+      controller.observerResumeTimer = null;
+    }
+    if (controller.nativeMenuSyncTimer) {
+      clearTimeout(controller.nativeMenuSyncTimer);
+      controller.nativeMenuSyncTimer = null;
+    }
+    if (controller.observer?.disconnect) {
+      controller.observer.disconnect();
+      controller.observer = null;
+    }
+    if (controller.nativeMenuObserver?.disconnect) {
+      controller.nativeMenuObserver.disconnect();
+      controller.nativeMenuObserver = null;
+    }
+    if (controller.intersectionObserver?.disconnect) {
+      controller.intersectionObserver.disconnect();
+      controller.intersectionObserver = null;
+    }
+    if (controller.menuPositionFrame) {
+      cancelAnimationFrame(controller.menuPositionFrame);
+      controller.menuPositionFrame = 0;
+    }
+    if (controller.domEventAbortController?.abort) {
+      controller.domEventAbortController.abort();
+      controller.domEventAbortController = null;
+    }
+    if (controller.handleDocumentPointerDown) {
+      document.removeEventListener("pointerdown", controller.handleDocumentPointerDown, true);
+      controller.handleDocumentPointerDown = null;
+    }
+    if (controller.handleDocumentKeyDown) {
+      document.removeEventListener("keydown", controller.handleDocumentKeyDown, true);
+      controller.handleDocumentKeyDown = null;
+    }
+    if (controller.handleDocumentScroll) {
+      document.removeEventListener("scroll", controller.handleDocumentScroll, true);
+      controller.handleDocumentScroll = null;
+    }
+    if (controller.handleWindowResize) {
+      window.removeEventListener("resize", controller.handleWindowResize);
+      controller.handleWindowResize = null;
+    }
+    controller.started = false;
+  }
+
+  safeStopController(ns?.sidebarFolderController);
+  safeStopController(ns?.conversationTocController);
+
+  const historyContainer = document.getElementById("history");
+  for (const section of Array.from(document.querySelectorAll(".cgca-folder-section"))) {
+    if (historyContainer) {
+      for (const anchor of Array.from(section.querySelectorAll('a[data-sidebar-item="true"][href*="/c/"]'))) {
+        historyContainer.appendChild(anchor);
+      }
+    }
+    section.remove();
+  }
+
+  for (const portal of Array.from(document.querySelectorAll(".cgca-folder-menu-portal"))) {
+    portal.remove();
+  }
+
+  for (const menuItem of Array.from(document.querySelectorAll(".cgca-native-conversation-menu-item"))) {
+    menuItem.remove();
+  }
+
+  for (const anchor of Array.from(document.querySelectorAll("a[data-cgca-drag-owner]"))) {
+    anchor.removeAttribute("data-cgca-drag-owner");
+    anchor.classList.remove("cgca-chat-dragging");
+    anchor.draggable = false;
+  }
+
+  if (historyContainer) {
+    historyContainer.removeAttribute("data-cgca-unassigned-owner");
+    historyContainer.classList.remove("cgca-unassigned-drop-target");
+  }
+  const yourChatsSection = historyContainer?.parentElement;
+  if (yourChatsSection) {
+    yourChatsSection.removeAttribute("data-cgca-unassigned-owner");
+    yourChatsSection.classList.remove("cgca-unassigned-drop-target");
+  }
+
+  for (const rail of Array.from(document.querySelectorAll(".cgca-conversation-toc-rail"))) {
+    rail.remove();
+  }
+
+  if (ns?.runtimeInvalidationHandlers?.clear) {
+    ns.runtimeInvalidationHandlers.clear();
+  }
+
+  delete globalThis.__chatgptConversationArchiveInjected;
+  delete globalThis.__chatgptConversationArchiveContent;
+}
+
 async function reinjectContentScript(tabId) {
+  await chrome.scripting.executeScript({
+    target: { tabId },
+    func: resetInjectedContentRuntimeForReinject
+  });
   await chrome.scripting.executeScript({
     target: { tabId },
     files: CONTENT_SCRIPT_FILES
   });
+}
+
+async function reinjectContentScriptsIntoOpenChatGptTabs() {
+  let tabs = [];
+
+  try {
+    tabs = await chrome.tabs.query({
+      url: ["https://chatgpt.com/*"]
+    });
+  } catch (error) {
+    console.warn("Failed to query open ChatGPT tabs for content-script reinjection:", error);
+    return;
+  }
+
+  await Promise.all(
+    tabs.map(async (tab) => {
+      if (!tab?.id || typeof tab.id !== "number") {
+        return;
+      }
+
+      try {
+        await reinjectContentScript(tab.id);
+      } catch (error) {
+        console.warn(`Failed to reinject content scripts into tab ${tab.id}:`, error);
+      }
+    })
+  );
 }
 
 async function waitForTabReady(tabId, options) {

@@ -23,6 +23,10 @@
     SET_SIDEBAR_SECTION_EXPANDED: "SET_SIDEBAR_SECTION_EXPANDED"
   };
 
+  ns.RUNTIME_ERROR_CODES = {
+    extensionContextInvalidated: "EXTENSION_CONTEXT_INVALIDATED"
+  };
+
   ns.SELECTOR_MAP = {
     historyContainers: [
       'nav[aria-label="Chat history"] #history',
@@ -118,6 +122,44 @@
       }
     }
     return [];
+  };
+
+  ns.runtimeContextInvalidated = false;
+  ns.runtimeInvalidationHandlers = ns.runtimeInvalidationHandlers || new Set();
+
+  ns.isRuntimeContextInvalidatedError = function isRuntimeContextInvalidatedError(error) {
+    const message = String(error?.message || error || "").toLowerCase();
+    return message.includes("extension context invalidated");
+  };
+
+  ns.addRuntimeInvalidationHandler = function addRuntimeInvalidationHandler(handler) {
+    if (typeof handler !== "function") {
+      return function noopRuntimeInvalidationHandlerRemoval() {};
+    }
+
+    ns.runtimeInvalidationHandlers.add(handler);
+    return function removeRuntimeInvalidationHandler() {
+      ns.runtimeInvalidationHandlers.delete(handler);
+    };
+  };
+
+  ns.handleRuntimeInvalidation = function handleRuntimeInvalidation(error) {
+    if (ns.runtimeContextInvalidated) {
+      return;
+    }
+
+    ns.runtimeContextInvalidated = true;
+    for (const handler of Array.from(ns.runtimeInvalidationHandlers)) {
+      try {
+        handler(error);
+      } catch (handlerError) {
+        console.warn("Runtime invalidation handler failed:", handlerError);
+      }
+    }
+  };
+
+  ns.isRuntimeInvalidatedResponse = function isRuntimeInvalidatedResponse(response) {
+    return response?.code === ns.RUNTIME_ERROR_CODES.extensionContextInvalidated;
   };
 
   ns.findFirstByFallbackSelectors = function findFirstByFallbackSelectors(root, selectors) {
@@ -276,9 +318,30 @@
   };
 
   ns.sendRuntimeMessage = async function sendRuntimeMessage(message) {
+    if (ns.runtimeContextInvalidated) {
+      return {
+        ok: false,
+        error: "Extension context invalidated.",
+        code: ns.RUNTIME_ERROR_CODES.extensionContextInvalidated
+      };
+    }
+
     try {
       return await chrome.runtime.sendMessage(message);
     } catch (error) {
+      const invalidated = ns.isRuntimeContextInvalidatedError(error);
+      if (invalidated) {
+        ns.handleRuntimeInvalidation(error);
+      }
+
+      if (invalidated) {
+        return {
+          ok: false,
+          error: error?.message || "Extension context invalidated.",
+          code: ns.RUNTIME_ERROR_CODES.extensionContextInvalidated
+        };
+      }
+
       console.warn("Runtime message failed:", message?.type, error);
       return { ok: false, error: error?.message || "Unknown runtime error" };
     }

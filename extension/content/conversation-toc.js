@@ -37,7 +37,38 @@
         this.scheduleRender(0);
       },
 
+      stop() {
+        if (this.renderTimer) {
+          clearTimeout(this.renderTimer);
+          this.renderTimer = null;
+        }
+        if (this.observer) {
+          this.observer.disconnect();
+          this.observer = null;
+        }
+
+        this.observedMain = null;
+        this.disconnectVisibilityObserver();
+
+        if (this.handleDocumentPointerDown) {
+          document.removeEventListener("pointerdown", this.handleDocumentPointerDown, true);
+          this.handleDocumentPointerDown = null;
+        }
+        if (this.handleDocumentKeyDown) {
+          document.removeEventListener("keydown", this.handleDocumentKeyDown, true);
+          this.handleDocumentKeyDown = null;
+        }
+
+        this.activeTurnId = "";
+        this.previewTurnId = "";
+        this.expanded = false;
+        this.lastRenderSnapshot = null;
+        this.started = false;
+        ns.removeConversationTocRail();
+      },
+
       attachDocumentListeners() {
+        if (!this.started) return;
         if (!this.handleDocumentPointerDown) {
           this.handleDocumentPointerDown = (event) => {
             if (!this.expanded) return;
@@ -62,6 +93,7 @@
       },
 
       attachMutationWatcher() {
+        if (!this.started) return;
         const main = ns.queryConversationMain();
         if (!main) {
           this.scheduleRender(500);
@@ -89,17 +121,23 @@
       },
 
       scheduleRender(delayMs = 0) {
+        if (!this.started) return;
         if (this.renderTimer) {
           clearTimeout(this.renderTimer);
         }
 
         this.renderTimer = setTimeout(() => {
+          if (!this.started) {
+            this.renderTimer = null;
+            return;
+          }
           this.renderTimer = null;
           this.render();
         }, delayMs);
       },
 
       render() {
+        if (!this.started) return;
         this.attachDocumentListeners();
         this.attachMutationWatcher();
 
@@ -152,24 +190,28 @@
       },
 
       setActiveTurn(turnId) {
+        if (!this.started) return;
         if (!turnId || this.activeTurnId === turnId) return;
         this.activeTurnId = turnId;
         this.scheduleRender(0);
       },
 
       setPreviewTurn(turnId) {
+        if (!this.started) return;
         if (!turnId || this.previewTurnId === turnId) return;
         this.previewTurnId = turnId;
         this.scheduleRender(0);
       },
 
       clearPreviewTurn() {
+        if (!this.started) return;
         if (!this.previewTurnId) return;
         this.previewTurnId = "";
         this.scheduleRender(0);
       },
 
       toggleExpanded(forceValue) {
+        if (!this.started) return;
         const nextValue = typeof forceValue === "boolean" ? forceValue : !this.expanded;
         if (this.expanded === nextValue) return;
         this.expanded = nextValue;
@@ -180,6 +222,7 @@
       },
 
       observeTurnVisibility(turnModels) {
+        if (!this.started) return;
         if (typeof IntersectionObserver !== "function") {
           return;
         }
