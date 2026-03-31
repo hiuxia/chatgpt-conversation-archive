@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.1] - 2026-03-31
+
+### Fixed
+
+1. automatically reinject content scripts into already-open ChatGPT tabs after extension install, update, or browser startup
+2. tear down stale folder and conversation TOC UI before reinjection so open tabs recover without a manual refresh
+
+### Changed
+
+1. harden local ignore rules for common secret, certificate, and environment files
+
 ## [0.4.0] - 2026-03-23
 
 ### Added
@@ -62,4 +73,3 @@ All notable changes to this project will be documented in this file.
 8. Side panel selection persistence in `chrome.storage.session`.
 9. Pagination-based history browsing in side panel.
 10. CDP smoke test and ZIP integrity self-test.
-

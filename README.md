@@ -121,7 +121,7 @@ Batch export:
 
 ## Current Version
 
-- `v0.4.0`
+- `v0.4.1`
 
 ## Release Automation
 
