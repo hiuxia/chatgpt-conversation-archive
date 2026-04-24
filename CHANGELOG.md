@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.2] - 2026-04-24
+
+### Fixed
+
+1. harden conversation toc recovery
+
+### Changed
+
+1. rewrite readme with accurate screenshots
+
 ## [0.4.1] - 2026-03-31
 
 ### Fixed

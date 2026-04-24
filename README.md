@@ -130,4 +130,4 @@ npm run test:cdp
 
 ## Current Version
 
-- `v0.4.1`
+- `v0.4.2`
