@@ -116,7 +116,11 @@
 
   ns.queryAllByFallbackSelectors = function queryAllByFallbackSelectors(root, selectors) {
     for (const selector of selectors) {
-      const nodes = Array.from(root.querySelectorAll(selector));
+      const nodes = [];
+      if (root instanceof Element && root.matches(selector)) {
+        nodes.push(root);
+      }
+      nodes.push(...Array.from(root.querySelectorAll(selector)));
       if (nodes.length > 0) {
         return nodes;
       }
@@ -164,6 +168,9 @@
 
   ns.findFirstByFallbackSelectors = function findFirstByFallbackSelectors(root, selectors) {
     for (const selector of selectors) {
+      if (root instanceof Element && root.matches(selector)) {
+        return root;
+      }
       const node = root.querySelector(selector);
       if (node) {
         return node;
@@ -176,8 +183,23 @@
     return (text || "").replace(/\r\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
   };
 
+  ns.decodeUrlPathSegment = function decodeUrlPathSegment(value) {
+    try {
+      return decodeURIComponent(value);
+    } catch (_) {
+      return value;
+    }
+  };
+
+  ns.getConversationIdFromPathname = function getConversationIdFromPathname(
+    pathname = window.location.pathname
+  ) {
+    const match = String(pathname || "").match(/(?:^|\/)c\/([^/?#]+)/i);
+    return match ? ns.decodeUrlPathSegment(match[1]) : "";
+  };
+
   ns.isConversationRoute = function isConversationRoute(pathname = window.location.pathname) {
-    return /\/c\/[0-9a-f-]+/i.test(String(pathname || ""));
+    return Boolean(ns.getConversationIdFromPathname(pathname));
   };
 
   ns.sleep = function sleep(ms) {
@@ -197,8 +219,16 @@
   };
 
   ns.getConversationIdFromHref = function getConversationIdFromHref(href) {
-    const match = String(href || "").match(/\/c\/([0-9a-f-]+)/i);
-    return match ? match[1] : "";
+    const rawHref = String(href || "").trim();
+    if (!rawHref) return "";
+
+    try {
+      const parsed = new URL(rawHref, window.location.origin);
+      return ns.getConversationIdFromPathname(parsed.pathname);
+    } catch (_) {
+      const match = rawHref.match(/\/c\/([^/?#]+)/i);
+      return match ? ns.decodeUrlPathSegment(match[1]) : "";
+    }
   };
 
   ns.getConversationTitleFromAnchor = function getConversationTitleFromAnchor(anchor) {

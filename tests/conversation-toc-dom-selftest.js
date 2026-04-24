@@ -9,6 +9,7 @@ const MODULES = [
   path.join(PROJECT_ROOT, "extension", "content", "runtime.js"),
   path.join(PROJECT_ROOT, "extension", "content", "conversation-toc.js")
 ];
+const CONTENT_ENTRY_PATH = path.join(PROJECT_ROOT, "extension", "content.js");
 
 function assert(condition, message) {
   if (!condition) {
@@ -59,15 +60,14 @@ async function run() {
           </div>
         </section>
         <section data-testid="conversation-turn-5" data-turn="assistant" data-scroll-anchor="false">
-          <div data-message-author-role="assistant">
-            <div class="markdown prose">
-              <p>No headings here</p>
-            </div>
+          <div data-message-author-role="assistant" class="markdown prose">
+            <h4>Root markdown heading</h4>
+            <p>Heading root uses the same node as the role anchor.</p>
           </div>
         </section>
       </main>
     `,
-    { url: "https://chatgpt.com/c/abc123ef-1111-2222-3333-444444444444" }
+    { url: "https://chatgpt.com/c/conv-1?model=gpt-5" }
   );
 
   let lastScrolledTarget = null;
@@ -116,6 +116,11 @@ async function run() {
   loadModules(context);
 
   const ns = context.__chatgptConversationArchiveContent;
+  assert(ns.isConversationRoute("/c/conv-1"), "Conversation route detection should accept non-UUID IDs.");
+  assert(
+    ns.getConversationIdFromHref("/c/conv-1?model=gpt-5") === "conv-1",
+    "Conversation ID parsing should stop before query strings."
+  );
   const controller = ns.createConversationTocController();
   controller.start();
   await wait(10);
@@ -136,6 +141,14 @@ async function run() {
 
   const dots = rail.querySelectorAll(".cgca-conversation-toc-dot");
   assert(dots.length === 3, "Every assistant answer should produce one jump dot.");
+
+  const rootMarkdownModel = ns
+    .collectConversationTocTurnModels(dom.window.document.querySelector("main"))
+    .find((model) => model.turnId === "conversation-turn-5");
+  assert(
+    rootMarkdownModel?.headings[0]?.text === "Root markdown heading",
+    "TOC heading extraction should include a markdown root when it is also the role node."
+  );
 
   const surface = rail.querySelector(".cgca-conversation-toc-surface");
   assert(surface, "Expanded TOC should render a dock surface.");
@@ -285,6 +298,8 @@ async function run() {
     "Restarting the TOC controller should render the rail again after teardown."
   );
 
+  await runContentEntryIsolationTest();
+
   fs.mkdirSync(path.dirname(REPORT_PATH), { recursive: true });
   fs.writeFileSync(
     REPORT_PATH,
@@ -300,6 +315,89 @@ async function run() {
   );
 
   console.log("[PASS] Conversation TOC DOM self-test passed.");
+}
+
+async function runContentEntryIsolationTest() {
+  const dom = new JSDOM(
+    `
+      <main>
+        <section data-testid="conversation-turn-1" data-turn="assistant" data-scroll-anchor="true">
+          <div data-message-author-role="assistant" class="markdown prose">
+            <h2>Still starts</h2>
+            <p>The TOC should survive a separate feature initialization failure.</p>
+          </div>
+        </section>
+      </main>
+    `,
+    { url: "https://chatgpt.com/c/conv-isolated" }
+  );
+
+  class IntersectionObserverStub {
+    constructor(callback) {
+      this.callback = callback;
+      this.elements = new Set();
+    }
+    observe(element) {
+      this.elements.add(element);
+    }
+    disconnect() {
+      this.elements.clear();
+    }
+  }
+
+  const warnings = [];
+  const context = {
+    window: dom.window,
+    document: dom.window.document,
+    Node: dom.window.Node,
+    Element: dom.window.Element,
+    HTMLElement: dom.window.HTMLElement,
+    MutationObserver: dom.window.MutationObserver,
+    IntersectionObserver: IntersectionObserverStub,
+    URL: dom.window.URL,
+    CSS: {
+      ...(dom.window.CSS || {}),
+      escape: (value) => String(value).replace(/["\\]/g, "\\$&")
+    },
+    chrome: {
+      runtime: {
+        onMessage: {
+          addListener(listener) {
+            return listener;
+          }
+        }
+      }
+    },
+    console: {
+      ...console,
+      warn(...args) {
+        warnings.push(args.map(String).join(" "));
+      }
+    },
+    setTimeout,
+    clearTimeout,
+    requestAnimationFrame: (callback) => setTimeout(callback, 0),
+    cancelAnimationFrame: (id) => clearTimeout(id)
+  };
+  context.globalThis = context;
+
+  loadModules(context);
+  context.__chatgptConversationArchiveContent.initializeSidebarFolderController = () => {
+    throw new Error("synthetic sidebar failure");
+  };
+  vm.runInContext(fs.readFileSync(CONTENT_ENTRY_PATH, "utf8"), context, {
+    filename: CONTENT_ENTRY_PATH
+  });
+  await wait(10);
+
+  assert(
+    dom.window.document.querySelector(".cgca-conversation-toc-rail"),
+    "Content entry should still start the TOC when sidebar initialization fails."
+  );
+  assert(
+    warnings.some((message) => message.includes("sidebar folders initialization failed")),
+    "Content entry should report the isolated sidebar initialization failure."
+  );
 }
 
 run().catch((error) => {

@@ -109,6 +109,7 @@ function loadBackgroundHooks(initialFolderState, options = {}) {
   const source = `${fs.readFileSync(BACKGROUND_PATH, "utf8")}
 ;globalThis.__sidebarFolderSelftestHooks = {
   deleteSidebarFolder,
+  parseConversationId,
   reinjectContentScript,
   reinjectContentScriptsIntoOpenChatGptTabs,
   SIDEBAR_FOLDER_STORAGE_KEY
@@ -256,6 +257,11 @@ async function runBackgroundLifecycleRecoveryTest() {
       }
     ]
   });
+
+  assert(
+    hooks.parseConversationId("https://chatgpt.com/c/conv-1?model=gpt-5") === "conv-1",
+    "Background route parsing should accept non-UUID conversation IDs."
+  );
 
   assert(
     runtimeListeners.onInstalled.length === 1,
@@ -477,6 +483,9 @@ async function runReinjectResetLifecycleTest() {
     dom.window.document.querySelectorAll(".cgca-conversation-toc-rail").length === 1,
     "Reinjecting should leave only one conversation TOC rail in the DOM."
   );
+
+  secondNs.sidebarFolderController?.stop();
+  secondNs.conversationTocController?.stop();
 }
 
 function runSidebarPerformanceHelperTest() {
@@ -943,12 +952,15 @@ async function runNativeConversationMenuInjectionTest() {
     "Folder picker submenu should stay open if ChatGPT closes the native menu after selecting Move to folders."
   );
 
-  dom.window.HTMLElement.prototype.getBoundingClientRect = originalRect;
-
-  return {
+  const report = {
     injectedLabel: injectedItem.textContent.trim(),
     assignMessage
   };
+
+  dom.window.HTMLElement.prototype.getBoundingClientRect = originalRect;
+  controller.stop();
+
+  return report;
 }
 
 async function runRuntimeInvalidationTeardownTest() {

@@ -335,11 +335,11 @@ function normalizeSelectedItems(rawItems) {
       rawUrl = `https://chatgpt.com/c/${rawId}`;
     }
 
-    if (!rawUrl || !/^https:\/\/chatgpt\.com\/c\//.test(rawUrl)) {
+    const parsed = parseConversationId(rawUrl);
+    if (!rawUrl || !rawUrl.startsWith("https://chatgpt.com/") || !parsed) {
       continue;
     }
 
-    const parsed = parseConversationId(rawUrl);
     const id = parsed || rawId || rawUrl;
     if (seen.has(id)) continue;
     seen.add(id);
@@ -355,8 +355,25 @@ function normalizeSelectedItems(rawItems) {
 }
 
 function parseConversationId(url) {
-  const match = String(url).match(/\/c\/([0-9a-f-]+)/i);
-  return match ? match[1] : "";
+  const rawUrl = String(url || "").trim();
+  if (!rawUrl) return "";
+
+  try {
+    const parsed = new URL(rawUrl, "https://chatgpt.com");
+    const match = parsed.pathname.match(/(?:^|\/)c\/([^/?#]+)/i);
+    return match ? decodeUrlPathSegment(match[1]) : "";
+  } catch (_) {
+    const match = rawUrl.match(/\/c\/([^/?#]+)/i);
+    return match ? decodeUrlPathSegment(match[1]) : "";
+  }
+}
+
+function decodeUrlPathSegment(value) {
+  try {
+    return decodeURIComponent(value);
+  } catch (_) {
+    return value;
+  }
 }
 
 async function extractConversationFromUrl(url) {

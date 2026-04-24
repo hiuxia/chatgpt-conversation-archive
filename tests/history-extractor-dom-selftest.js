@@ -34,7 +34,7 @@ function run() {
         </section>
         <section data-testid="conversation-turn-2" data-turn="assistant" data-turn-id="turn-assistant-1">
           <div class="turn-reasoning"><button type="button">Thought for 42s</button></div>
-          <div data-message-author-role="assistant">
+          <div data-message-author-role="assistant" class="markdown prose">
             <div class="markdown prose">
               <p>First markdown block.</p>
             </div>
@@ -46,7 +46,7 @@ function run() {
         </section>
       </main>
     `,
-    { url: "https://chatgpt.com/c/abc123ef-1111-2222-3333-444444444444" }
+    { url: "https://chatgpt.com/c/conv-1?model=gpt-5" }
   );
 
   const context = {
@@ -70,6 +70,7 @@ function run() {
   loadModules(context);
 
   const ns = context.__chatgptConversationArchiveContent;
+  assert(ns.getConversationIdFromPathname() === "conv-1", "Route parser should accept non-UUID conversation IDs.");
   const turnNodes = ns.getTurnNodesInOrder();
   assert(turnNodes.length === 2, "Section-based turn containers should be discovered in order.");
   assert(
@@ -79,6 +80,7 @@ function run() {
   );
 
   const payload = ns.extractCurrentConversation();
+  assert(payload.id === "conv-1", "Extracted payload should keep the full route conversation ID.");
   assert(payload.turns.length === 2, "Conversation extraction should keep both turns.");
   assert(payload.turns[0].role === "user", "First extracted turn should keep the user role.");
   assert(payload.turns[1].role === "assistant", "Second extracted turn should keep the assistant role.");

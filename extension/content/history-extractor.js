@@ -11,8 +11,8 @@
     const startedAt = Date.now();
 
     while (Date.now() - startedAt < timeoutMs) {
-      const idMatch = window.location.pathname.match(/\/c\/([0-9a-f-]+)/i);
-      if (idMatch) {
+      const conversationId = ns.getConversationIdFromPathname();
+      if (conversationId) {
         const turnNodes = ns.getTurnNodesInOrder();
         if (turnNodes.length > 0) {
           return ns.extractCurrentConversation();
@@ -34,12 +34,11 @@
   };
 
   ns.extractCurrentConversation = function extractCurrentConversation() {
-    const idMatch = window.location.pathname.match(/\/c\/([0-9a-f-]+)/i);
-    if (!idMatch) {
+    const conversationId = ns.getConversationIdFromPathname();
+    if (!conversationId) {
       throw new Error("Current page is not a conversation route (/c/<id>).");
     }
 
-    const conversationId = idMatch[1];
     const title = ns.normalizeTitle(document.title);
     const turnNodes = ns.getTurnNodesInOrder();
 

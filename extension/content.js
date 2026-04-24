@@ -9,8 +9,21 @@
     throw new Error("ChatGPT content runtime is unavailable.");
   }
 
-  ns.initializeSidebarFolderController();
-  ns.initializeConversationTocController();
+  function initializeContentFeature(label, initializer) {
+    if (typeof initializer !== "function") {
+      console.warn(`ChatGPT Voyager ${label} initializer is unavailable.`);
+      return;
+    }
+
+    try {
+      initializer();
+    } catch (error) {
+      console.warn(`ChatGPT Voyager ${label} initialization failed:`, error);
+    }
+  }
+
+  initializeContentFeature("sidebar folders", ns.initializeSidebarFolderController);
+  initializeContentFeature("conversation TOC", ns.initializeConversationTocController);
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message?.type === ns.MESSAGE_TYPES.PING) {
